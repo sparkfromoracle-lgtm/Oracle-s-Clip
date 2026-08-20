@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  media-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: oracle-clip-media-service:latest
+    container_name: oracle_clip_media_service
+    ports:
+      - "3000:3000"
+    environment:
+      - ENVIRONMENT=production
+      - PORT=3000
+      - API_KEYS=prod_key_live_123:tenant_primary,prod_key_live_456:tenant_secondary
+      - WEBHOOK_SECRET=super_strong_production_webhook_secret_123456
+      - STORAGE_BACKEND=local
+      - LOCAL_STORAGE_BASE_DIR=/app/storage
+      - FFMPEG_BINARY=ffmpeg
+      - FFPROBE_BINARY=ffprobe
+      - ASR_PROVIDER=mock
+      - CLIP_PROVIDER=mock
+    volumes:
+      - media_storage:/app/storage
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  media_storage:
+    driver: local

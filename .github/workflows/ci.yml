@@ -1,0 +1,97 @@
+name: Oracle Clip CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test-and-validate:
+    name: Test & Security Validation
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install System Dependencies (FFmpeg)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Install Python Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Test Suite & Coverage
+        run: |
+          PYTHONPATH=. pytest tests/ -v --cov=media_service --cov=shared
+
+      - name: Verify Fail-Closed Production Configuration
+        run: |
+          python -c "from media_service.config.settings import Settings; s = Settings(environment='production');"
+
+      - name: Verify Checksum Manifest Generator
+        run: |
+          python -c "from shared.hashing.checksum_verifier import verify_artifact_checksum; res = verify_artifact_checksum('Dockerfile', 'Dockerfile'); print(res)"
+
+  frontend-build:
+    name: Frontend Lint & Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install NPM Packages
+        run: npm ci || npm install
+
+      - name: Run TypeScript Linter
+        run: npm run lint
+
+      - name: Build Frontend Application
+        run: npm run build
+
+  docker-build:
+    name: Docker Container Build & Security Scan
+    needs: [test-and-validate, frontend-build]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Container Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          tags: oracle-clip-media-service:latest
+
+      - name: Test Container Healthcheck in Docker
+        run: |
+          docker run -d --name test-media-service -p 3000:3000 \
+            -e ENVIRONMENT=development \
+            -e API_KEYS=test_key_ci:tenant_ci \
+            -e WEBHOOK_SECRET=ci_test_secret_123456 \
+            oracle-clip-media-service:latest
+          sleep 5
+          docker exec test-media-service curl -f http://localhost:3000/health
+          docker exec test-media-service ffmpeg -version
+          docker stop test-media-service

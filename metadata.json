@@ -1,0 +1,6 @@
+{
+  "name": "Oracle Clip Production Hub",
+  "description": "Production-hardened media processing and clipping service with deterministic Zero-LLM pipeline, FFmpeg execution, tenant isolation, and Base44 orchestration contracts.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

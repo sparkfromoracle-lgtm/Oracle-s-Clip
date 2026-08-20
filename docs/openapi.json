@@ -1,0 +1,1128 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Oracle Clip Production Hub API",
+    "description": "Deterministic media processing, opportunity generation, clip validation, and rendering service.",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Health Check",
+        "description": "Liveness probe: returns 200 if API process is running.",
+        "operationId": "health_check_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ready": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Readiness Check",
+        "description": "Readiness probe: verifies external dependencies and configuration.",
+        "operationId": "readiness_check_ready_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/metrics": {
+      "get": {
+        "tags": [
+          "observability"
+        ],
+        "summary": "Get Prometheus Metrics",
+        "description": "Prometheus exposition format metrics.",
+        "operationId": "get_prometheus_metrics_metrics_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/metrics": {
+      "get": {
+        "tags": [
+          "observability"
+        ],
+        "summary": "Get Json Metrics",
+        "description": "Structured JSON telemetry and performance percentiles.",
+        "operationId": "get_json_metrics_v1_metrics_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
+    "/v1/lifecycle/usage/{target_tenant_id}": {
+      "get": {
+        "tags": [
+          "lifecycle"
+        ],
+        "summary": "Get Tenant Lifecycle Usage",
+        "description": "Returns disk and quota telemetry for the tenant.",
+        "operationId": "get_tenant_lifecycle_usage_v1_lifecycle_usage__target_tenant_id__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "target_tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Target Tenant Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/lifecycle/cleanup": {
+      "post": {
+        "tags": [
+          "lifecycle"
+        ],
+        "summary": "Trigger Lifecycle Cleanup",
+        "description": "Runs automated temporary file and failed render cleanup.",
+        "operationId": "trigger_lifecycle_cleanup_v1_lifecycle_cleanup_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
+    "/v1/config/summary": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Get Config Summary",
+        "description": "Returns safe, sanitized configuration summary without credentials.",
+        "operationId": "get_config_summary_v1_config_summary_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
+    "/v1/opportunities/generate": {
+      "post": {
+        "tags": [
+          "opportunities"
+        ],
+        "summary": "Generate Opportunities",
+        "description": "Phase 13.1: Deterministic Zero-LLM ContentOpportunity generation.",
+        "operationId": "generate_opportunities_v1_opportunities_generate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerateOpportunitiesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
+    "/v1/clip-specs/validate": {
+      "post": {
+        "tags": [
+          "clip_spec"
+        ],
+        "summary": "Validate Clip Specification",
+        "description": "Phase 13.2: Structural ClipSpecification validation.",
+        "operationId": "validate_clip_specification_v1_clip_specs_validate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ValidateClipSpecRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
+    "/v1/render-jobs": {
+      "post": {
+        "tags": [
+          "rendering"
+        ],
+        "summary": "Create Render Job",
+        "description": "Submits and renders a ClipSpecification with strict tenant isolation and idempotency.",
+        "operationId": "create_render_job_v1_render_jobs_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRenderJobRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/render-jobs/{job_id}": {
+      "get": {
+        "tags": [
+          "rendering"
+        ],
+        "summary": "Get Render Job",
+        "description": "Retrieves RenderJob state with tenant scoping.",
+        "operationId": "get_render_job_v1_render_jobs__job_id__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/quality/check": {
+      "post": {
+        "tags": [
+          "quality"
+        ],
+        "summary": "Check Asset Quality",
+        "description": "Phase 13.4: Evaluates quality metrics on a rendered asset.",
+        "operationId": "check_asset_quality_v1_quality_check_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenderedAssetInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
+    "/v1/guardian/evaluate": {
+      "post": {
+        "tags": [
+          "quality"
+        ],
+        "summary": "Evaluate Guardian Policy",
+        "description": "Phase 13.4: Evaluates Guardian policy for publication approval.",
+        "operationId": "evaluate_guardian_policy_v1_guardian_evaluate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GuardianEvaluateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
+    "/v1/webhooks/inbound": {
+      "post": {
+        "tags": [
+          "webhooks"
+        ],
+        "summary": "Receive Inbound Webhook",
+        "description": "Phase 13.7: Secure webhook receiver with HMAC-SHA256 signature verification and replay prevention.",
+        "operationId": "receive_inbound_webhook_v1_webhooks_inbound_post",
+        "parameters": [
+          {
+            "name": "X-Webhook-Signature",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Webhook-Signature"
+            }
+          },
+          {
+            "name": "X-Webhook-Timestamp",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Webhook-Timestamp"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/checksums/verify": {
+      "post": {
+        "tags": [
+          "checksums"
+        ],
+        "summary": "Verify Checksum Endpoint",
+        "description": "Cryptographic SHA-256 Checksum Verification endpoint.",
+        "operationId": "verify_checksum_endpoint_v1_checksums_verify_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChecksumVerifyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
+    "/v1/orchestration/run": {
+      "post": {
+        "tags": [
+          "orchestration"
+        ],
+        "summary": "Run Orchestration Pipeline",
+        "description": "Executes full canonical media pipeline end-to-end with tenant authorization.",
+        "operationId": "run_orchestration_pipeline_v1_orchestration_run_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunOrchestrationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ChecksumVerifyRequest": {
+        "properties": {
+          "artifact_identity": {
+            "type": "string",
+            "title": "Artifact Identity"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          },
+          "expected_checksum": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Checksum"
+          }
+        },
+        "type": "object",
+        "required": [
+          "artifact_identity",
+          "content"
+        ],
+        "title": "ChecksumVerifyRequest"
+      },
+      "ClipSpecInput": {
+        "properties": {
+          "spec_id": {
+            "type": "string",
+            "title": "Spec Id"
+          },
+          "source_media_id": {
+            "type": "string",
+            "title": "Source Media Id"
+          },
+          "segments": {
+            "items": {
+              "$ref": "#/components/schemas/SegmentSpecInput"
+            },
+            "type": "array",
+            "title": "Segments"
+          },
+          "schema_version": {
+            "type": "string",
+            "title": "Schema Version",
+            "default": "1.0.0"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version",
+            "default": 1
+          },
+          "target_aspect_ratio": {
+            "type": "string",
+            "title": "Target Aspect Ratio",
+            "default": "9:16"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "draft"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metadata"
+          }
+        },
+        "type": "object",
+        "required": [
+          "spec_id",
+          "source_media_id",
+          "segments"
+        ],
+        "title": "ClipSpecInput"
+      },
+      "CreateRenderJobRequest": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "tenant_id": {
+            "type": "string",
+            "title": "Tenant Id"
+          },
+          "spec": {
+            "$ref": "#/components/schemas/ClipSpecInput"
+          },
+          "source_media_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Media Path"
+          },
+          "output_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Path"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "tenant_id",
+          "spec"
+        ],
+        "title": "CreateRenderJobRequest"
+      },
+      "GenerateOpportunitiesRequest": {
+        "properties": {
+          "source_media_id": {
+            "type": "string",
+            "title": "Source Media Id"
+          },
+          "duration_ms": {
+            "type": "integer",
+            "title": "Duration Ms"
+          },
+          "scenes": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/SceneInput"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scenes"
+          },
+          "max_opportunities": {
+            "type": "integer",
+            "title": "Max Opportunities",
+            "default": 10
+          }
+        },
+        "type": "object",
+        "required": [
+          "source_media_id",
+          "duration_ms"
+        ],
+        "title": "GenerateOpportunitiesRequest"
+      },
+      "GuardianEvaluateRequest": {
+        "properties": {
+          "report_id": {
+            "type": "string",
+            "title": "Report Id"
+          },
+          "asset_id": {
+            "type": "string",
+            "title": "Asset Id"
+          },
+          "verdict": {
+            "type": "string",
+            "title": "Verdict"
+          },
+          "overall_score": {
+            "type": "number",
+            "title": "Overall Score"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          }
+        },
+        "type": "object",
+        "required": [
+          "report_id",
+          "asset_id",
+          "verdict",
+          "overall_score",
+          "summary"
+        ],
+        "title": "GuardianEvaluateRequest"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "RenderedAssetInput": {
+        "properties": {
+          "asset_id": {
+            "type": "string",
+            "title": "Asset Id"
+          },
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "tenant_id": {
+            "type": "string",
+            "title": "Tenant Id"
+          },
+          "storage_path": {
+            "type": "string",
+            "title": "Storage Path"
+          },
+          "duration_ms": {
+            "type": "integer",
+            "title": "Duration Ms"
+          },
+          "width": {
+            "type": "integer",
+            "title": "Width"
+          },
+          "height": {
+            "type": "integer",
+            "title": "Height"
+          },
+          "bitrate": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bitrate"
+          },
+          "file_size_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Size Bytes"
+          },
+          "content_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Hash"
+          }
+        },
+        "type": "object",
+        "required": [
+          "asset_id",
+          "job_id",
+          "tenant_id",
+          "storage_path",
+          "duration_ms",
+          "width",
+          "height"
+        ],
+        "title": "RenderedAssetInput"
+      },
+      "RunOrchestrationRequest": {
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "title": "Task Id"
+          },
+          "tenant_id": {
+            "type": "string",
+            "title": "Tenant Id"
+          },
+          "source_media_path": {
+            "type": "string",
+            "title": "Source Media Path"
+          },
+          "duration_ms": {
+            "type": "integer",
+            "title": "Duration Ms"
+          },
+          "scenes": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/SceneInput"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scenes"
+          },
+          "target_aspect_ratio": {
+            "type": "string",
+            "title": "Target Aspect Ratio",
+            "default": "9:16"
+          },
+          "output_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Dir"
+          }
+        },
+        "type": "object",
+        "required": [
+          "task_id",
+          "tenant_id",
+          "source_media_path",
+          "duration_ms"
+        ],
+        "title": "RunOrchestrationRequest"
+      },
+      "SceneInput": {
+        "properties": {
+          "scene_index": {
+            "type": "integer",
+            "title": "Scene Index"
+          },
+          "start_ms": {
+            "type": "integer",
+            "title": "Start Ms"
+          },
+          "end_ms": {
+            "type": "integer",
+            "title": "End Ms"
+          },
+          "score": {
+            "type": "number",
+            "title": "Score",
+            "default": 1.0
+          }
+        },
+        "type": "object",
+        "required": [
+          "scene_index",
+          "start_ms",
+          "end_ms"
+        ],
+        "title": "SceneInput"
+      },
+      "SegmentSpecInput": {
+        "properties": {
+          "start_ms": {
+            "type": "integer",
+            "title": "Start Ms"
+          },
+          "end_ms": {
+            "type": "integer",
+            "title": "End Ms"
+          },
+          "source_media_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Media Id"
+          },
+          "transition_in": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transition In"
+          },
+          "transition_out": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transition Out"
+          }
+        },
+        "type": "object",
+        "required": [
+          "start_ms",
+          "end_ms"
+        ],
+        "title": "SegmentSpecInput"
+      },
+      "ValidateClipSpecRequest": {
+        "properties": {
+          "spec": {
+            "$ref": "#/components/schemas/ClipSpecInput"
+          },
+          "source_duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Duration Ms"
+          }
+        },
+        "type": "object",
+        "required": [
+          "spec"
+        ],
+        "title": "ValidateClipSpecRequest"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    },
+    "securitySchemes": {
+      "APIKeyHeader": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key"
+      }
+    }
+  }
+}
