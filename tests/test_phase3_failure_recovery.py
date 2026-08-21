@@ -25,6 +25,8 @@ class FailingRenderer:
             job_id=job.job_id,
             storage_path=output_path,
             duration_ms=5000,
+            width=1920,
+            height=1080,
             file_size_bytes=1024,
             checksum_sha256="abc123success",
         )

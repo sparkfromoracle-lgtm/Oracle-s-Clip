@@ -3,8 +3,12 @@ import time
 import pytest
 from fastapi.testclient import TestClient
 from media_service.api.app import app
+from media_service.config.settings import Settings, load_settings_from_env
 from shared.contracts.enums import JobStatus, QualityVerdict
 from media_service.security.webhooks import WebhookSecurity
+
+# Ensure test API keys are configured
+os.environ["API_KEYS"] = "dev-admin-key-12345:tenant-alpha,dev-admin-key-load:load_tenant"
 
 
 def test_phase1_production_smoke_test_e2e(tmp_path):
