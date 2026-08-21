@@ -75,6 +75,35 @@ class CanonicalPipelineOrchestrator:
         except Exception as e:
             logger.warning(f"Failed to dispatch Base44 webhook '{event_type}' to {self.webhook_target_url}: {e}")
 
+    def render_job(self, job: RenderJob, source_media_path: str, output_path: str) -> RenderJob:
+        """Render a single job with retry logic."""
+        attempt = 0
+        last_error = None
+        rendered_asset: Optional[RenderedAsset] = None
+
+        while attempt <= self.max_retries:
+            try:
+                rendered_asset = self.renderer.render(
+                    job,
+                    source_media_path=source_media_path,
+                    output_path=output_path,
+                )
+                job.status = JobStatus.COMPLETED
+                job.output_path = output_path
+                return job
+            except Exception as e:
+                attempt += 1
+                last_error = e
+                logger.warning(f"Render attempt {attempt} failed for job {job.job_id}: {e}")
+                if attempt > self.max_retries:
+                    job.status = JobStatus.FAILED
+                    job.error_message = str(last_error)
+                    raise RenderingError(f"Rendering failed after {attempt} attempts: {last_error}")
+
+        job.status = JobStatus.COMPLETED
+        job.output_path = output_path
+        return job
+
     def execute_pipeline(
         self,
         task_id: str,
@@ -147,12 +176,7 @@ class CanonicalPipelineOrchestrator:
 
         # Transition to IN_PROGRESS
         state_machine.transition(JobStatus.PENDING, JobStatus.IN_PROGRESS)
-        job = RenderJob(
-            job_id=job.job_id,
-            tenant_id=tenant_id,
-            spec=spec,
-            status=JobStatus.IN_PROGRESS,
-        )
+        job.status = JobStatus.IN_PROGRESS
 
         # Step 5: Rendering (FFmpeg with retry handling)
         out_path = os.path.join(out_dir, f"rendered_{task_id}.mp4")
@@ -174,6 +198,7 @@ class CanonicalPipelineOrchestrator:
                 logger.warning(f"Render attempt {attempt} failed for job {job.job_id}: {e}")
                 if attempt > self.max_retries:
                     state_machine.transition(JobStatus.IN_PROGRESS, JobStatus.FAILED)
+                    job.status = JobStatus.FAILED
                     self._dispatch_event(tenant_id, "clip.failed", {
                         "task_id": task_id,
                         "job_id": job.job_id,
@@ -182,13 +207,8 @@ class CanonicalPipelineOrchestrator:
                     raise RenderingError(f"Rendering failed after {attempt} attempts: {last_error}")
 
         state_machine.transition(JobStatus.IN_PROGRESS, JobStatus.COMPLETED)
-        job = RenderJob(
-            job_id=job.job_id,
-            tenant_id=tenant_id,
-            spec=spec,
-            status=JobStatus.COMPLETED,
-            output_path=out_path,
-        )
+        job.status = JobStatus.COMPLETED
+        job.output_path = out_path
         self._dispatch_event(tenant_id, "clip.rendered", {
             "task_id": task_id,
             "job_id": job.job_id,

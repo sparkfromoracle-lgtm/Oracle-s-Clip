@@ -37,7 +37,7 @@ class ClipSpecification:
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 
-@dataclass(frozen=True)
+@dataclass
 class RenderJob:
     job_id: str
     tenant_id: str
@@ -55,14 +55,15 @@ class RenderJob:
 class RenderedAsset:
     asset_id: str
     job_id: str
-    tenant_id: str
     storage_path: str
     duration_ms: int
-    width: int
-    height: int
+    width: int = 0
+    height: int = 0
+    tenant_id: Optional[str] = None
     bitrate: Optional[int] = None
     file_size_bytes: Optional[int] = None
     content_hash: Optional[str] = None
+    checksum_sha256: Optional[str] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 

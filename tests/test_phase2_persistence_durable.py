@@ -29,7 +29,7 @@ def test_durable_job_store_crud_and_restart(tmp_path):
     assert len(store) == 1
     assert "job_101" in store
 
-    # 2. Update status and output path
+    # 2. Update status and output path (now allowed since RenderJob is mutable)
     job.status = JobStatus.COMPLETED
     job.output_path = "/tmp/out_101.mp4"
     store.save_job(job)
