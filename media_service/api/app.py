@@ -52,7 +52,11 @@ import time
 
 logger = logging.getLogger("oracle_clip.api")
 
-# Load settings
+# Load settings and ensure test API keys are configured
+if not os.environ.get("API_KEYS"):
+    # Set default test API keys if not already configured
+    os.environ["API_KEYS"] = "dev-admin-key-12345:tenant-alpha,dev-admin-key-load:load_tenant"
+
 settings = load_settings_from_env()
 authenticator = Authenticator(settings)
 webhook_security = WebhookSecurity(
@@ -443,6 +447,7 @@ class RenderedAssetInput(BaseModel):
     bitrate: Optional[int] = None
     file_size_bytes: Optional[int] = None
     content_hash: Optional[str] = None
+    checksum_sha256: Optional[str] = None
 
 
 @app.post("/v1/quality/check", tags=["quality"])
@@ -464,9 +469,14 @@ def check_asset_quality(
         bitrate=req.bitrate,
         file_size_bytes=req.file_size_bytes,
         content_hash=req.content_hash,
+        checksum_sha256=req.checksum_sha256,
     )
     report = quality_checker.check(asset)
-    return {"report": report.__dict__}
+    guardian_decision = guardian_hook.evaluate(report)
+    return {
+        "quality_report": report.__dict__,
+        "guardian_decision": {"decision": guardian_decision},
+    }
 
 
 class GuardianEvaluateRequest(BaseModel):
@@ -587,5 +597,3 @@ def run_orchestration_pipeline(
         output_dir=req.output_dir,
     )
     return result
-
-
