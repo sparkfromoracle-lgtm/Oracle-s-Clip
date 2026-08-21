@@ -7,6 +7,7 @@ interface HeaderProps {
   activeTab: 'dashboard' | 'logs' | 'contracts' | 'simulator';
   setActiveTab: (tab: 'dashboard' | 'logs' | 'contracts' | 'simulator') => void;
   isAuditing: boolean;
+  systemStatus: 'ready' | 'degraded' | 'unreachable';
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -15,7 +16,29 @@ export const Header: React.FC<HeaderProps> = ({
   activeTab,
   setActiveTab,
   isAuditing,
+  systemStatus,
 }) => {
+  const statusStyles = {
+    ready: {
+      wrapper: 'bg-emerald-500/10 border-emerald-500/30',
+      dot: 'bg-emerald-500 animate-pulse',
+      text: 'text-emerald-400',
+      label: 'ENGINE READY',
+    },
+    degraded: {
+      wrapper: 'bg-amber-500/10 border-amber-500/30',
+      dot: 'bg-amber-500 animate-pulse',
+      text: 'text-amber-400',
+      label: 'ENGINE DEGRADED',
+    },
+    unreachable: {
+      wrapper: 'bg-rose-500/10 border-rose-500/30',
+      dot: 'bg-rose-500',
+      text: 'text-rose-400',
+      label: 'ENGINE OFFLINE',
+    },
+  }[systemStatus];
+
   return (
     <header className="h-14 bg-[#0f172a] border-b border-slate-800 flex items-center justify-between px-6 shrink-0 select-none">
       <div className="flex items-center gap-4">
@@ -79,9 +102,11 @@ export const Header: React.FC<HeaderProps> = ({
           <span>{isAuditing ? 'AUDITING...' : 'VERIFY ALL'}</span>
         </button>
 
-        <div className="flex gap-2 items-center bg-emerald-500/10 px-3 py-1 rounded border border-emerald-500/30">
-          <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
-          <span className="text-xs font-mono text-emerald-400 tracking-wide font-semibold">SYSTEM HARDENED</span>
+        <div className={`flex gap-2 items-center px-3 py-1 rounded border ${statusStyles.wrapper}`}>
+          <div className={`w-2 h-2 rounded-full ${statusStyles.dot}`}></div>
+          <span className={`text-xs font-mono tracking-wide font-semibold ${statusStyles.text}`}>
+            {statusStyles.label}
+          </span>
         </div>
 
         <div className="text-xs text-slate-400 font-mono hidden sm:block border-l border-slate-800 pl-4">

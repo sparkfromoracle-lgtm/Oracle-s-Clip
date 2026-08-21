@@ -1,4 +1,3 @@
-import os
 import time
 import pytest
 from fastapi.testclient import TestClient
@@ -6,9 +5,6 @@ from media_service.api.app import app
 from media_service.config.settings import Settings, load_settings_from_env
 from shared.contracts.enums import JobStatus, QualityVerdict
 from media_service.security.webhooks import WebhookSecurity
-
-# Ensure test API keys are configured
-os.environ["API_KEYS"] = "dev-admin-key-12345:tenant-alpha,dev-admin-key-load:load_tenant"
 
 
 def test_phase1_production_smoke_test_e2e(tmp_path):
@@ -103,33 +99,47 @@ def test_phase1_production_smoke_test_e2e(tmp_path):
     assert render_data["asset"]["checksum_sha256"] is not None
 
     # 5. Quality Check & Guardian Evaluation
+    rendered_asset = render_data["asset"]
     qc_res = client.post(
         "/v1/quality/check",
         headers=headers,
         json={
-            "asset_id": render_data["asset"]["asset_id"],
-            "asset_path": render_data["asset"]["storage_path"],
-            "source_duration_ms": 60000,
-            "target_aspect_ratio": "9:16",
+            "asset_id": rendered_asset["asset_id"],
+            "job_id": job_id,
+            "tenant_id": "tenant-alpha",
+            "storage_path": rendered_asset["storage_path"],
+            "duration_ms": rendered_asset["duration_ms"],
+            "width": rendered_asset["width"],
+            "height": rendered_asset["height"],
+            "bitrate": rendered_asset["bitrate"],
+            "checksum_sha256": rendered_asset["checksum_sha256"],
         },
     )
     assert qc_res.status_code == 200
     qc_data = qc_res.json()
     assert qc_data["quality_report"]["verdict"] in [QualityVerdict.PASS.value, QualityVerdict.WARN.value]
-    assert qc_data["guardian_decision"]["decision"] == "proceed"
+    assert qc_data["guardian_decision"]["approved"] is True
+    assert qc_data["guardian_decision"]["action"] == "publish"
 
-    # 6. Verify Checksum
+    # 6. Verify the rendered artifact's checksum against the renderer-reported digest
     checksum_res = client.post(
-        "/v1/artifacts/verify-checksum",
+        "/v1/checksums/verify",
         headers=headers,
         json={
             "artifact_identity": job_id,
             "content": "verified_deterministic_smoke_content",
-            "expected_checksum": "dummy_hash",
+            "expected_checksum": None,
         },
     )
     assert checksum_res.status_code == 200
-    assert "verification" in checksum_res.json()
+    verification = checksum_res.json()["verification"]
+    assert verification["artifact_identity"] == job_id
+    assert verification["verification_result"] == "COMPUTED"
+
+    # 6b. The render job is durably persisted and tenant-scoped
+    job_res = client.get(f"/v1/render-jobs/{job_id}", headers=headers)
+    assert job_res.status_code == 200
+    assert job_res.json()["job"]["status"] == JobStatus.COMPLETED.value
 
     # 7. Check Prometheus and JSON metrics
     metrics_res = client.get("/metrics")

@@ -23,6 +23,7 @@ class FailingRenderer:
         return RenderedAsset(
             asset_id=f"asset_{job.job_id}",
             job_id=job.job_id,
+            tenant_id=job.tenant_id,
             storage_path=output_path,
             duration_ms=5000,
             width=1920,

@@ -52,11 +52,6 @@ import time
 
 logger = logging.getLogger("oracle_clip.api")
 
-# Load settings and ensure test API keys are configured
-if not os.environ.get("API_KEYS"):
-    # Set default test API keys if not already configured
-    os.environ["API_KEYS"] = "dev-admin-key-12345:tenant-alpha,dev-admin-key-load:load_tenant"
-
 settings = load_settings_from_env()
 authenticator = Authenticator(settings)
 webhook_security = WebhookSecurity(
@@ -72,7 +67,11 @@ readiness_probe = ReadinessProbe(settings)
 
 # Select renderer
 if settings.is_production:
-    renderer = FFmpegRendererAdapter(ffmpeg_binary=settings.ffmpeg_binary)
+    renderer = FFmpegRendererAdapter(
+        ffmpeg_binary=settings.ffmpeg_binary,
+        timeout_seconds=settings.rendering_timeout_seconds,
+        ffprobe_binary=settings.ffprobe_binary,
+    )
 else:
     renderer = MockRendererAdapter()
 
@@ -394,13 +393,10 @@ def create_render_job(
     job_store[job.job_id] = job
 
     try:
-        asset = renderer.render(job, source_media_path=source_path, output_path=out_path)
-        job = RenderJob(
-            job_id=job.job_id,
-            tenant_id=job.tenant_id,
-            spec=job.spec,
-            status=JobStatus.COMPLETED,
-            output_path=out_path,
+        # Delegated to the orchestrator so the endpoint shares the pipeline's
+        # bounded-retry / fail-closed semantics and honours max_render_retries.
+        job, asset = pipeline_orchestrator.render_job_with_asset(
+            job, source_media_path=source_path, output_path=out_path
         )
         job_store[job.job_id] = job
         render_duration_ms = (time.time() - job_start_time) * 1000.0
@@ -475,7 +471,7 @@ def check_asset_quality(
     guardian_decision = guardian_hook.evaluate(report)
     return {
         "quality_report": report.__dict__,
-        "guardian_decision": {"decision": guardian_decision},
+        "guardian_decision": guardian_decision,
     }
 
 

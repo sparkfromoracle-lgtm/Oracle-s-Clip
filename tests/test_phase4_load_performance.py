@@ -1,13 +1,9 @@
-import os
 import time
 import concurrent.futures
 import pytest
 from fastapi.testclient import TestClient
 from media_service.api.app import app
 from media_service.observability.metrics import MetricsCollector
-
-# Ensure test API keys are configured
-os.environ["API_KEYS"] = "dev-admin-key-12345:tenant-alpha,dev-admin-key-load:load_tenant"
 
 
 def test_concurrent_load_and_rate_limiting():

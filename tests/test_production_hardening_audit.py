@@ -11,6 +11,7 @@ from media_service.orchestration.orchestrator import CanonicalPipelineOrchestrat
 from media_service.rendering.ffmpeg_renderer import FFmpegRendererAdapter
 from media_service.storage.object_storage import LocalStorageBackend
 from media_service.security.webhooks import WebhookSecurity, WebhookDispatcher
+from shared.contracts.enums import QualityVerdict
 from shared.errors.errors import ValidationError, RateLimitExceededError
 
 TEST_API_KEY = "test_key_tenant_alpha"
@@ -36,7 +37,9 @@ def test_rate_limiter_token_bucket():
 
 
 def test_idempotency_store_caching_and_lock():
-    store = IdempotencyStore(default_ttl_seconds=60)
+    # Isolated store: the production default path is durable on disk, so the
+    # test must not share state with other runs/processes.
+    store = IdempotencyStore(default_ttl_seconds=60, db_path=":memory:")
     # First acquisition succeeds
     assert store.acquire_lock("key1") is True
     # Second acquisition fails (in-progress)
@@ -118,7 +121,14 @@ def test_end_to_end_canonical_orchestrator(tmp_path):
     assert result["job"]["status"] == "completed"
     assert result["asset"]["width"] > 0
     assert result["asset"]["height"] > 0
-    assert result["quality_report"]["verdict"] in {"pass", "warning", "fail"}
+    assert result["quality_report"]["verdict"] in {
+        QualityVerdict.PASS,
+        QualityVerdict.WARN,
+        QualityVerdict.FAIL,
+    }
+    # The renderer must honour the clip specification's target aspect ratio.
+    assert result["asset"]["width"] == 1080
+    assert result["asset"]["height"] == 1920
     assert result["guardian_decision"]["approved"] is True
     assert result["storage_url"] is not None
 

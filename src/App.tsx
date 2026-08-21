@@ -8,96 +8,31 @@ import { SystemReadiness } from './components/SystemReadiness';
 import { InteractiveValidator } from './components/InteractiveValidator';
 import { ContractViewer } from './components/ContractViewer';
 import { Footer } from './components/Footer';
-import { AuditLogEntry, PipelineStep } from './types';
+import { useEngineStatus } from './hooks/useEngineStatus';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'logs' | 'contracts' | 'simulator'>('dashboard');
   const [selectedFile, setSelectedFile] = useState<string>('orchestration_contracts.py');
-  const [isAuditing, setIsAuditing] = useState<boolean>(false);
 
-  const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([
-    {
-      id: 'log-1',
-      timestamp: '2024-05-24 09:12',
-      category: 'AUTH',
-      message: 'Loading API key provider...',
-    },
-    {
-      id: 'log-2',
-      timestamp: '2024-05-24 09:12',
-      category: 'AUTH',
-      message: 'Timing-safe comparison enabled.',
-    },
-    {
-      id: 'log-3',
-      timestamp: '2024-05-24 09:13',
-      category: 'SEC',
-      message: 'HMAC-SHA256 signature verification online.',
-    },
-    {
-      id: 'log-4',
-      timestamp: '2024-05-24 09:13',
-      category: 'SEC',
-      message: 'Stale timestamp threshold set: 300s.',
-    },
-    {
-      id: 'log-5',
-      timestamp: '2024-05-24 09:14',
-      category: 'WARN',
-      message: 'FFmpeg configured for restricted mode.',
-    },
-    {
-      id: 'log-6',
-      timestamp: '2024-05-24 09:15',
-      category: 'OK',
-      message: 'All 15 security checks passed.',
-    },
-  ]);
+  // Single source of truth: live state polled from the media service.
+  const engine = useEngineStatus();
+
+  const systemStatus: 'ready' | 'degraded' | 'unreachable' = !engine.readiness
+    ? 'unreachable'
+    : engine.readiness.status === 'ready'
+    ? 'ready'
+    : 'degraded';
 
   const handleSelectFile = (fileName: string) => {
     setSelectedFile(fileName);
     setActiveTab('contracts');
   };
 
-  const handleTriggerAuditScan = () => {
-    setIsAuditing(true);
-    const now = new Date();
-    const timeStr = now.toTimeString().split(' ')[0].substring(0, 5);
-
-    setTimeout(() => {
-      const newEntries: AuditLogEntry[] = [
-        {
-          id: `log-${Date.now()}-1`,
-          timestamp: `2024-05-24 ${timeStr}`,
-          category: 'FFEXEC',
-          message: 'Subprocess argv sandbox probe clean; execve arguments sealed.',
-        },
-        {
-          id: `log-${Date.now()}-2`,
-          timestamp: `2024-05-24 ${timeStr}`,
-          category: 'AUTH',
-          message: 'Constant-time verification evaluated tenant principal context.',
-          tenantId: 'tenant-oracle-alpha',
-        },
-        {
-          id: `log-${Date.now()}-3`,
-          timestamp: `2024-05-24 ${timeStr}`,
-          category: 'OK',
-          message: 'Zero-LLM deterministic pipeline check: 100% compliant.',
-        },
-      ];
-      setAuditLogs((prev) => [...newEntries, ...prev]);
-      setIsAuditing(false);
-    }, 600);
-  };
-
   const handleMetricCardClick = (metric: string) => {
-    if (metric === 'tests' || metric === 'tenant') {
-      handleTriggerAuditScan();
+    if (metric === 'requests' || metric === 'jobs' || metric === 'tenant') {
+      void engine.probe();
     } else if (metric === 'ffmpeg') {
       setSelectedFile('rendering/ffmpeg_exec.py');
-      setActiveTab('contracts');
-    } else if (metric === 'gateway') {
       setActiveTab('contracts');
     }
   };
@@ -109,8 +44,9 @@ export default function App() {
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         onOpenValidator={() => setActiveTab('simulator')}
-        onTriggerAuditScan={handleTriggerAuditScan}
-        isAuditing={isAuditing}
+        onTriggerAuditScan={() => void engine.probe()}
+        isAuditing={engine.isProbing}
+        systemStatus={systemStatus}
       />
 
       {/* Main Workspace */}
@@ -122,23 +58,35 @@ export default function App() {
         <section className="flex-1 flex flex-col bg-[#020617] overflow-hidden">
           {activeTab === 'dashboard' && (
             <div className="p-6 flex flex-col gap-6 h-full overflow-y-auto">
-              {/* Top 4 Metrics */}
-              <MetricsBar onCardClick={handleMetricCardClick} />
+              {/* Live telemetry cards */}
+              <MetricsBar
+                metrics={engine.metrics}
+                readiness={engine.readiness}
+                config={engine.config}
+                isProbing={engine.isProbing}
+                onCardClick={handleMetricCardClick}
+              />
 
               {/* Canonical Architecture Pipeline Flow */}
               <PipelineFlow />
 
-              {/* Bottom 2-Column Grid: Security Integrity Audit & System Readiness */}
+              {/* Bottom 2-Column Grid: real activity stream & readiness probes */}
               <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-6 min-h-[220px]">
-                <SecurityAuditLog logs={auditLogs} />
-                <SystemReadiness onRunProbe={handleTriggerAuditScan} />
+                <SecurityAuditLog logs={engine.logs} isStreaming={engine.isProbing} lastProbeAt={engine.lastProbeAt} />
+                <SystemReadiness
+                  readiness={engine.readiness}
+                  latencyMs={engine.readinessLatencyMs}
+                  isProbing={engine.isProbing}
+                  error={engine.lastError}
+                  onRunProbe={() => void engine.probe()}
+                />
               </div>
             </div>
           )}
 
           {activeTab === 'simulator' && (
             <div className="p-6 h-full flex flex-col overflow-hidden">
-              <InteractiveValidator />
+              <InteractiveValidator onActivity={engine.appendLog} />
             </div>
           )}
 

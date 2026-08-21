@@ -1,123 +1,135 @@
 import React, { useState } from 'react';
-import { ClipSpec } from '../types';
-import { Play, CheckCircle2, AlertOctagon, RefreshCw, FileCheck, Layers, Terminal } from 'lucide-react';
+import { Play, CheckCircle2, AlertOctagon, FileCheck, Film } from 'lucide-react';
+import { ApiError, RenderJobResponse, TENANT_ID, api } from '../api/client';
+import { AuditLogEntry } from '../types';
 
 interface InteractiveValidatorProps {
-  onValidated?: (spec: ClipSpec, isValid: boolean) => void;
+  onActivity?: (category: AuditLogEntry['category'], message: string, tenantId?: string) => void;
 }
 
-export const InteractiveValidator: React.FC<InteractiveValidatorProps> = ({ onValidated }) => {
-  const [tenantId, setTenantId] = useState<string>('tenant-enterprise-01');
+type Stage = 'idle' | 'validating' | 'rendering' | 'done' | 'failed';
+
+interface SegmentInput {
+  start_ms: number;
+  end_ms: number;
+}
+
+const DEFAULT_SEGMENTS = JSON.stringify(
+  [
+    { start_ms: 12500, end_ms: 34200 },
+    { start_ms: 85000, end_ms: 110400 },
+  ],
+  null,
+  2
+);
+
+/**
+ * Executes the real backend pipeline: POST /v1/clip-specs/validate followed by
+ * POST /v1/render-jobs. Every value shown below comes from the API response.
+ */
+export const InteractiveValidator: React.FC<InteractiveValidatorProps> = ({ onActivity }) => {
+  const [tenantId, setTenantId] = useState<string>(TENANT_ID);
   const [sourceMediaId, setSourceMediaId] = useState<string>('media-raw-84920');
-  const [sourceDuration, setSourceDuration] = useState<number>(300);
+  const [sourceDurationMs, setSourceDurationMs] = useState<number>(300000);
   const [aspectRatio, setAspectRatio] = useState<'9:16' | '16:9' | '1:1'>('9:16');
-  const [segmentsText, setSegmentsText] = useState<string>(
-    JSON.stringify(
-      [
-        { startTime: 12.5, endTime: 34.2, speaker: 'Host', relevanceScore: 0.95 },
-        { startTime: 85.0, endTime: 110.4, speaker: 'Guest', relevanceScore: 0.91 },
-      ],
-      null,
-      2
-    )
-  );
+  const [sourceMediaPath, setSourceMediaPath] = useState<string>('');
+  const [segmentsText, setSegmentsText] = useState<string>(DEFAULT_SEGMENTS);
 
+  const [stage, setStage] = useState<Stage>('idle');
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
-  const [validationSuccess, setValidationSuccess] = useState<boolean | null>(null);
-  const [isEvaluating, setIsEvaluating] = useState<boolean>(false);
-  const [simulationResult, setSimulationResult] = useState<any | null>(null);
+  const [requestError, setRequestError] = useState<string | null>(null);
+  const [jobResult, setJobResult] = useState<RenderJobResponse | null>(null);
 
-  const handleValidate = () => {
-    setIsEvaluating(true);
+  const busy = stage === 'validating' || stage === 'rendering';
+
+  const handleRun = async () => {
+    setStage('validating');
     setValidationErrors([]);
-    setValidationSuccess(null);
-    setSimulationResult(null);
+    setRequestError(null);
+    setJobResult(null);
 
-    setTimeout(() => {
-      const errors: string[] = [];
+    let segments: SegmentInput[];
+    try {
+      const parsed = JSON.parse(segmentsText);
+      if (!Array.isArray(parsed) || parsed.length === 0) throw new Error('segments must be a non-empty array');
+      segments = parsed.map((s: Record<string, number>) => ({
+        start_ms: Number(s.start_ms),
+        end_ms: Number(s.end_ms),
+        source_media_id: sourceMediaId,
+      })) as SegmentInput[];
+    } catch (e) {
+      setValidationErrors([`Invalid segments JSON: ${(e as Error).message}`]);
+      setStage('failed');
+      return;
+    }
 
-      if (!sourceMediaId.trim()) {
-        errors.push('source_media_id is required');
-      }
-      if (!tenantId.trim()) {
-        errors.push('tenant_id is required for multi-tenant isolation');
-      }
-      if (sourceDuration <= 0) {
-        errors.push('source_duration_seconds must be > 0');
-      }
+    const specId = `spec-${Date.now()}`;
+    const spec = {
+      spec_id: specId,
+      source_media_id: sourceMediaId,
+      segments,
+      schema_version: '1.0.0',
+      version: 1,
+      target_aspect_ratio: aspectRatio,
+      status: 'draft',
+      metadata: {},
+    };
 
-      let parsedSegments: any[] = [];
-      try {
-        parsedSegments = JSON.parse(segmentsText);
-        if (!Array.isArray(parsedSegments) || parsedSegments.length === 0) {
-          errors.push('segments list must contain at least 1 segment');
-        } else {
-          parsedSegments.forEach((seg, idx) => {
-            if (typeof seg.startTime !== 'number' || typeof seg.endTime !== 'number') {
-              errors.push(`Segment #${idx + 1}: startTime and endTime must be numeric floats`);
-            } else if (seg.startTime < 0) {
-              errors.push(`Segment #${idx + 1}: startTime cannot be negative`);
-            } else if (seg.endTime <= seg.startTime) {
-              errors.push(`Segment #${idx + 1}: endTime (${seg.endTime}) must be greater than startTime (${seg.startTime})`);
-            } else if (seg.endTime > sourceDuration) {
-              errors.push(
-                `Segment #${idx + 1}: endTime (${seg.endTime}s) exceeds source_duration (${sourceDuration}s)`
-              );
-            }
-          });
-        }
-      } catch (err: any) {
-        errors.push(`Invalid JSON format in segments: ${err.message}`);
+    try {
+      const validation = await api.validateClipSpec({ spec, source_duration_ms: sourceDurationMs });
+      onActivity?.(
+        validation.data.is_valid ? 'OK' : 'WARN',
+        `POST /v1/clip-specs/validate → ${validation.data.is_valid ? 'VALID' : `${validation.data.errors.length} error(s)`} in ${validation.data ? validation.durationMs.toFixed(1) : '?'}ms`,
+        tenantId
+      );
+      if (!validation.data.is_valid) {
+        setValidationErrors(validation.data.errors);
+        setStage('failed');
+        return;
       }
+    } catch (e) {
+      const err = e as ApiError;
+      setRequestError(`${err.status || 'network'}: ${err.message}`);
+      onActivity?.('WARN', `POST /v1/clip-specs/validate failed: ${err.message}`, tenantId);
+      setStage('failed');
+      return;
+    }
 
-      const isValid = errors.length === 0;
-      setValidationErrors(errors);
-      setValidationSuccess(isValid);
-      setIsEvaluating(false);
+    setStage('rendering');
+    const jobId = `job-${specId}`;
+    try {
+      const render = await api.createRenderJob(
+        {
+          job_id: jobId,
+          tenant_id: tenantId,
+          spec,
+          source_media_path: sourceMediaPath || undefined,
+        },
+        jobId
+      );
+      setJobResult(render.data);
+      setStage('done');
+      onActivity?.(
+        'JOB',
+        `POST /v1/render-jobs → ${render.data.job.status.toUpperCase()} ${jobId} ` +
+          `(${render.data.asset.width}x${render.data.asset.height}, ${render.data.asset.duration_ms}ms, ` +
+          `${render.durationMs.toFixed(1)}ms wall)`,
+        tenantId
+      );
+    } catch (e) {
+      const err = e as ApiError;
+      setRequestError(`${err.status || 'network'}: ${err.message}`);
+      setStage('failed');
+      onActivity?.('WARN', `POST /v1/render-jobs failed (${err.status}): ${err.message}`, tenantId);
+    }
+  };
 
-      if (isValid) {
-        const spec: ClipSpec = {
-          specVersion: '1.0',
-          tenantId,
-          sourceMediaId,
-          sourceDurationSeconds: sourceDuration,
-          segments: parsedSegments,
-          outputFormat: 'mp4',
-          aspectRatio,
-          targetBitrateKbps: 4500,
-        };
-        setSimulationResult({
-          status: 'VALIDATED_SEALED',
-          jobId: `job-render-${Math.random().toString(36).substring(2, 9)}`,
-          contentHash: 'sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
-          targetDuration: parsedSegments.reduce((acc, s) => acc + (s.endTime - s.startTime), 0).toFixed(2),
-          ffmpegArgvSandbox: [
-            '/usr/bin/ffmpeg',
-            '-y',
-            '-ss',
-            String(parsedSegments[0].startTime),
-            '-to',
-            String(parsedSegments[0].endTime),
-            '-i',
-            '/isolated_storage/' + sourceMediaId + '.mp4',
-            '-vf',
-            `scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2`,
-            '-c:v',
-            'libx264',
-            '-b:v',
-            '4500k',
-            '-c:a',
-            'aac',
-            '-b:a',
-            '192k',
-            '/tmp/rendered_output.mp4',
-          ],
-        });
-        onValidated?.(spec, true);
-      } else {
-        onValidated?.({} as any, false);
-      }
-    }, 350);
+  const stageLabel: Record<Stage, string> = {
+    idle: 'VALIDATE & RENDER',
+    validating: 'VALIDATING SPEC...',
+    rendering: 'RENDERING JOB...',
+    done: 'VALIDATE & RENDER',
+    failed: 'VALIDATE & RENDER',
   };
 
   return (
@@ -129,21 +141,21 @@ export const InteractiveValidator: React.FC<InteractiveValidatorProps> = ({ onVa
             <span>Deterministic Clip Spec Validator</span>
           </h2>
           <p className="text-xs text-slate-400 mt-1">
-            Validate declarative clip boundaries against tenant isolation constraints and FFmpeg duration bounds.
+            Runs the live pipeline: structural validation, then a real render job through the orchestrator.
           </p>
         </div>
 
         <button
-          onClick={handleValidate}
-          disabled={isEvaluating}
+          onClick={() => void handleRun()}
+          disabled={busy}
           className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-mono font-semibold px-4 py-2 rounded-lg transition-colors shadow-lg shadow-indigo-600/30 disabled:opacity-50"
         >
-          <Play className={`w-3.5 h-3.5 ${isEvaluating ? 'animate-spin' : ''}`} />
-          <span>{isEvaluating ? 'VALIDATING...' : 'VALIDATE & DRY-RUN'}</span>
+          <Play className={`w-3.5 h-3.5 ${busy ? 'animate-spin' : ''}`} />
+          <span>{stageLabel[stage]}</span>
         </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div>
           <label className="block text-[11px] font-mono uppercase text-slate-400 mb-1">Tenant ID (Isolated)</label>
           <input
@@ -165,24 +177,47 @@ export const InteractiveValidator: React.FC<InteractiveValidatorProps> = ({ onVa
         </div>
 
         <div>
-          <label className="block text-[11px] font-mono uppercase text-slate-400 mb-1">Source Duration (sec)</label>
+          <label className="block text-[11px] font-mono uppercase text-slate-400 mb-1">Source Duration (ms)</label>
           <input
             type="number"
-            value={sourceDuration}
-            onChange={(e) => setSourceDuration(Number(e.target.value))}
+            value={sourceDurationMs}
+            onChange={(e) => setSourceDurationMs(Number(e.target.value))}
             className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs font-mono text-slate-200 focus:outline-none focus:border-indigo-500"
           />
         </div>
+
+        <div>
+          <label className="block text-[11px] font-mono uppercase text-slate-400 mb-1">Target Aspect Ratio</label>
+          <select
+            value={aspectRatio}
+            onChange={(e) => setAspectRatio(e.target.value as '9:16' | '16:9' | '1:1')}
+            className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs font-mono text-slate-200 focus:outline-none focus:border-indigo-500"
+          >
+            <option value="9:16">9:16</option>
+            <option value="16:9">16:9</option>
+            <option value="1:1">1:1</option>
+          </select>
+        </div>
+      </div>
+
+      <div>
+        <label className="block text-[11px] font-mono uppercase text-slate-400 mb-1">
+          Server-side Source Media Path (optional)
+        </label>
+        <input
+          type="text"
+          value={sourceMediaPath}
+          placeholder="/app/storage/input.mp4 — required when the production FFmpeg renderer is active"
+          onChange={(e) => setSourceMediaPath(e.target.value)}
+          className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs font-mono text-slate-200 focus:outline-none focus:border-indigo-500"
+        />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Segments Editor */}
         <div className="flex flex-col">
           <div className="flex items-center justify-between mb-2">
-            <label className="text-[11px] font-mono uppercase text-slate-400">
-              Clip Segments (JSON Array)
-            </label>
-            <span className="text-[10px] text-slate-500 font-mono">STRICT SCHEMA</span>
+            <label className="text-[11px] font-mono uppercase text-slate-400">Clip Segments (JSON Array)</label>
+            <span className="text-[10px] text-slate-500 font-mono">STRICT SCHEMA · start_ms / end_ms</span>
           </div>
           <textarea
             rows={8}
@@ -192,27 +227,38 @@ export const InteractiveValidator: React.FC<InteractiveValidatorProps> = ({ onVa
           />
         </div>
 
-        {/* Validation Result Box */}
         <div className="flex flex-col bg-slate-950 rounded-xl border border-slate-800 p-4 justify-between">
           <div>
             <div className="flex items-center justify-between border-b border-slate-800 pb-2 mb-3">
               <span className="text-xs font-mono text-slate-400 uppercase font-bold">Verification Engine</span>
-              {validationSuccess === true && (
+              {stage === 'done' && (
                 <span className="text-xs font-mono text-emerald-400 flex items-center gap-1">
                   <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>PASS_SEALED</span>
+                  <span>RENDER COMPLETED</span>
                 </span>
               )}
-              {validationSuccess === false && (
+              {stage === 'failed' && (
                 <span className="text-xs font-mono text-rose-400 flex items-center gap-1">
                   <AlertOctagon className="w-3.5 h-3.5" />
                   <span>FAIL_CLOSED</span>
                 </span>
               )}
+              {busy && (
+                <span className="text-xs font-mono text-indigo-400 flex items-center gap-1">
+                  <Film className="w-3.5 h-3.5 animate-pulse" />
+                  <span>{stage === 'validating' ? 'VALIDATING' : 'RENDERING'}</span>
+                </span>
+              )}
             </div>
 
-            {validationErrors.length > 0 ? (
+            {validationErrors.length > 0 || requestError ? (
               <div className="space-y-1.5 font-mono text-xs text-rose-400">
+                {requestError && (
+                  <div className="flex items-start gap-1.5 bg-rose-950/30 p-1.5 rounded border border-rose-900/40">
+                    <span className="font-bold">✕</span>
+                    <span>{requestError}</span>
+                  </div>
+                )}
                 {validationErrors.map((err, i) => (
                   <div key={i} className="flex items-start gap-1.5 bg-rose-950/30 p-1.5 rounded border border-rose-900/40">
                     <span className="font-bold">✕</span>
@@ -220,38 +266,48 @@ export const InteractiveValidator: React.FC<InteractiveValidatorProps> = ({ onVa
                   </div>
                 ))}
               </div>
-            ) : simulationResult ? (
+            ) : jobResult ? (
               <div className="space-y-2 font-mono text-xs text-slate-300">
                 <div className="flex justify-between">
-                  <span className="text-slate-500">Synthetic Job ID:</span>
-                  <span className="text-indigo-400 font-bold">{simulationResult.jobId}</span>
+                  <span className="text-slate-500">Job ID:</span>
+                  <span className="text-indigo-400 font-bold">{jobResult.job.job_id}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-500">Duration Output:</span>
-                  <span className="text-emerald-400 font-bold">{simulationResult.targetDuration}s</span>
+                  <span className="text-slate-500">Status:</span>
+                  <span className="text-emerald-400 font-bold">{jobResult.job.status}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-500">Deterministic Hash:</span>
-                  <span className="text-slate-400 truncate max-w-[200px]">{simulationResult.contentHash}</span>
+                  <span className="text-slate-500">Rendered Duration:</span>
+                  <span className="text-emerald-400 font-bold">{(jobResult.asset.duration_ms / 1000).toFixed(2)}s</span>
                 </div>
-
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Frame Geometry:</span>
+                  <span>
+                    {jobResult.asset.width}×{jobResult.asset.height}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Artifact Bytes:</span>
+                  <span>{jobResult.asset.file_size_bytes ?? '—'}</span>
+                </div>
                 <div className="mt-3 pt-2 border-t border-slate-800/80">
-                  <div className="text-[10px] text-slate-500 uppercase font-bold mb-1">Generated FFmpeg Subprocess Argv:</div>
-                  <div className="bg-slate-900 p-2 rounded text-[10px] text-slate-400 break-all leading-relaxed max-h-24 overflow-y-auto">
-                    {simulationResult.ffmpegArgvSandbox.join(' ')}
+                  <div className="text-[10px] text-slate-500 uppercase font-bold mb-1">SHA-256 of rendered artifact</div>
+                  <div className="bg-slate-900 p-2 rounded text-[10px] text-slate-400 break-all leading-relaxed">
+                    {jobResult.asset.checksum_sha256 ?? 'not reported'}
                   </div>
+                  <div className="text-[10px] text-slate-500 mt-2 break-all">{jobResult.asset.storage_path}</div>
                 </div>
               </div>
             ) : (
               <div className="text-slate-500 text-xs font-mono italic py-8 text-center">
-                Click &quot;Validate &amp; Dry-Run&quot; to execute deterministic schema inspection and FFmpeg argument sandboxing.
+                Click &quot;Validate &amp; Render&quot; to run the live validation and render pipeline.
               </div>
             )}
           </div>
 
           <div className="text-[10px] font-mono text-slate-600 pt-2 border-t border-slate-900 flex justify-between">
             <span>ISOLATION: FAIL-CLOSED</span>
-            <span>MEMORY LIMIT: 2048MB</span>
+            <span>IDEMPOTENCY: JOB-SCOPED KEY</span>
           </div>
         </div>
       </div>

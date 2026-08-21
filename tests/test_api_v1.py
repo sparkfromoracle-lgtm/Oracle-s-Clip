@@ -145,7 +145,7 @@ def test_quality_and_guardian_endpoints():
         headers={"X-API-Key": TEST_API_KEY},
     )
     assert res_q.status_code == 200
-    report = res_q.json()["report"]
+    report = res_q.json()["quality_report"]
     assert report["verdict"] == "pass"
 
     # Guardian evaluation

@@ -33,6 +33,9 @@ services:
       - "3000:3000"
     environment:
       - VITE_API_URL=https://8000-${BASE44_PUBLIC_HOST_SUFFIX}
+      # Dev-only tenant credentials matching the api service's API_KEYS above.
+      - VITE_API_KEY=dev_key_local
+      - VITE_TENANT_ID=tenant_dev
       - CHOKIDAR_USEPOLLING=true
     volumes:
       - .:/app

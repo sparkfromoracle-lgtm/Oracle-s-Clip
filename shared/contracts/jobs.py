@@ -55,11 +55,11 @@ class RenderJob:
 class RenderedAsset:
     asset_id: str
     job_id: str
+    tenant_id: str
     storage_path: str
     duration_ms: int
-    width: int = 0
-    height: int = 0
-    tenant_id: Optional[str] = None
+    width: int
+    height: int
     bitrate: Optional[int] = None
     file_size_bytes: Optional[int] = None
     content_hash: Optional[str] = None

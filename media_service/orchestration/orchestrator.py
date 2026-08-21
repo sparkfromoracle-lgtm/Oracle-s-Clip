@@ -68,41 +68,58 @@ class CanonicalPipelineOrchestrator:
             payload=payload,
         )
         try:
-            self.webhook_dispatcher.dispatch(
+            self.webhook_dispatcher.deliver(
                 target_url=self.webhook_target_url,
                 payload=body.__dict__,
             )
         except Exception as e:
             logger.warning(f"Failed to dispatch Base44 webhook '{event_type}' to {self.webhook_target_url}: {e}")
 
-    def render_job(self, job: RenderJob, source_media_path: str, output_path: str) -> RenderJob:
-        """Render a single job with retry logic."""
+    def _render_with_retries(self, job: RenderJob, source_media_path: str, output_path: str) -> RenderedAsset:
+        """Single implementation of the render step: bounded retries, fail-closed.
+
+        Raises RenderingError once `max_retries` retries are exhausted.
+        """
         attempt = 0
-        last_error = None
-        rendered_asset: Optional[RenderedAsset] = None
+        last_error: Optional[Exception] = None
 
         while attempt <= self.max_retries:
             try:
-                rendered_asset = self.renderer.render(
+                return self.renderer.render(
                     job,
                     source_media_path=source_media_path,
                     output_path=output_path,
                 )
-                job.status = JobStatus.COMPLETED
-                job.output_path = output_path
-                return job
             except Exception as e:
                 attempt += 1
                 last_error = e
                 logger.warning(f"Render attempt {attempt} failed for job {job.job_id}: {e}")
-                if attempt > self.max_retries:
-                    job.status = JobStatus.FAILED
-                    job.error_message = str(last_error)
-                    raise RenderingError(f"Rendering failed after {attempt} attempts: {last_error}")
 
+        raise RenderingError(f"Rendering failed after {attempt} attempts: {last_error}")
+
+    def render_job(self, job: RenderJob, source_media_path: str, output_path: str) -> RenderJob:
+        """Renders one RenderJob, updating its lifecycle state in place.
+
+        Used by the /v1/render-jobs endpoint and by execute_pipeline so both
+        share the same retry and failure semantics. The produced RenderedAsset
+        is exposed via `self.last_rendered_asset` for callers that need it.
+        """
+        try:
+            asset = self._render_with_retries(job, source_media_path, output_path)
+        except RenderingError as e:
+            job.status = JobStatus.FAILED
+            job.error_message = str(e)
+            raise
+
+        self.last_rendered_asset = asset
         job.status = JobStatus.COMPLETED
         job.output_path = output_path
         return job
+
+    def render_job_with_asset(self, job: RenderJob, source_media_path: str, output_path: str):
+        """Same as `render_job` but returns the (job, RenderedAsset) pair."""
+        job = self.render_job(job, source_media_path, output_path)
+        return job, self.last_rendered_asset
 
     def execute_pipeline(
         self,
@@ -180,35 +197,23 @@ class CanonicalPipelineOrchestrator:
 
         # Step 5: Rendering (FFmpeg with retry handling)
         out_path = os.path.join(out_dir, f"rendered_{task_id}.mp4")
-        attempt = 0
-        last_error = None
-        rendered_asset: Optional[RenderedAsset] = None
-
-        while attempt <= self.max_retries:
-            try:
-                rendered_asset = self.renderer.render(
-                    job,
-                    source_media_path=source_media_path,
-                    output_path=out_path,
-                )
-                break
-            except Exception as e:
-                attempt += 1
-                last_error = e
-                logger.warning(f"Render attempt {attempt} failed for job {job.job_id}: {e}")
-                if attempt > self.max_retries:
-                    state_machine.transition(JobStatus.IN_PROGRESS, JobStatus.FAILED)
-                    job.status = JobStatus.FAILED
-                    self._dispatch_event(tenant_id, "clip.failed", {
-                        "task_id": task_id,
-                        "job_id": job.job_id,
-                        "error": str(last_error),
-                    })
-                    raise RenderingError(f"Rendering failed after {attempt} attempts: {last_error}")
+        try:
+            rendered_asset = self._render_with_retries(job, source_media_path, out_path)
+        except RenderingError as e:
+            state_machine.transition(JobStatus.IN_PROGRESS, JobStatus.FAILED)
+            job.status = JobStatus.FAILED
+            job.error_message = str(e)
+            self._dispatch_event(tenant_id, "clip.failed", {
+                "task_id": task_id,
+                "job_id": job.job_id,
+                "error": str(e),
+            })
+            raise
 
         state_machine.transition(JobStatus.IN_PROGRESS, JobStatus.COMPLETED)
         job.status = JobStatus.COMPLETED
         job.output_path = out_path
+        self.last_rendered_asset = rendered_asset
         self._dispatch_event(tenant_id, "clip.rendered", {
             "task_id": task_id,
             "job_id": job.job_id,

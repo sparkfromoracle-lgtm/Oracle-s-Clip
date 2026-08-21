@@ -4,10 +4,11 @@ import { Shield, CheckCircle2, AlertTriangle, Key, Terminal, Search, Filter, Dow
 
 interface SecurityAuditLogProps {
   logs: AuditLogEntry[];
-  onAddCustomLog?: (entry: AuditLogEntry) => void;
+  isStreaming?: boolean;
+  lastProbeAt?: string | null;
 }
 
-export const SecurityAuditLog: React.FC<SecurityAuditLogProps> = ({ logs }) => {
+export const SecurityAuditLog: React.FC<SecurityAuditLogProps> = ({ logs, isStreaming, lastProbeAt }) => {
   const [filter, setFilter] = useState<string>('ALL');
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [hasDownloaded, setHasDownloaded] = useState<boolean>(false);
@@ -25,17 +26,11 @@ export const SecurityAuditLog: React.FC<SecurityAuditLogProps> = ({ logs }) => {
     const dumpPayload = {
       exportMetadata: {
         system: 'Oracle Clip Production Hub',
-        pipeline: 'Sealed Architecture Canonical V13.7',
         exportedAt: new Date().toISOString(),
+        lastProbeAt: lastProbeAt ?? null,
         totalRecords: logs.length,
         activeFilter: filter,
         searchQuery: searchTerm || null,
-        securityProfile: {
-          isolation: 'SEALED',
-          hmacVerification: 'CONSTANT_TIME_HMAC_SHA256',
-          ffmpegSandbox: 'ARGV_RESTRICTED_SUBPROCESS',
-          aiGateway: 'FAIL_CLOSED',
-        },
       },
       auditLogs: filteredLogs,
     };
@@ -103,8 +98,14 @@ export const SecurityAuditLog: React.FC<SecurityAuditLogProps> = ({ logs }) => {
               </>
             )}
           </button>
-          <span className="text-[9px] text-emerald-400 font-mono font-bold bg-emerald-950/40 border border-emerald-800/40 px-2 py-0.5 rounded">
-            COMPLETED
+          <span
+            className={`text-[9px] font-mono font-bold px-2 py-0.5 rounded border ${
+              isStreaming
+                ? 'text-indigo-300 bg-indigo-950/40 border-indigo-800/40'
+                : 'text-emerald-400 bg-emerald-950/40 border-emerald-800/40'
+            }`}
+          >
+            {isStreaming ? 'PROBING...' : lastProbeAt ? `IDLE · ${lastProbeAt.substring(11)}` : 'IDLE'}
           </span>
         </div>
       </div>
@@ -112,7 +113,7 @@ export const SecurityAuditLog: React.FC<SecurityAuditLogProps> = ({ logs }) => {
       {/* Filter and Search Bar */}
       <div className="px-4 py-2 bg-slate-950/50 border-b border-slate-800/80 flex items-center justify-between gap-2 shrink-0">
         <div className="flex items-center gap-1">
-          {['ALL', 'AUTH', 'SEC', 'WARN', 'OK'].map((cat) => (
+          {['ALL', 'AUTH', 'SEC', 'WARN', 'OK', 'JOB'].map((cat) => (
             <button
               key={cat}
               onClick={() => setFilter(cat)}
@@ -139,6 +140,9 @@ export const SecurityAuditLog: React.FC<SecurityAuditLogProps> = ({ logs }) => {
 
       {/* Audit Log Stream */}
       <div className="p-4 font-mono text-[11px] leading-relaxed overflow-y-auto space-y-2 flex-1">
+        {filteredLogs.length === 0 && (
+          <div className="text-slate-500 italic">No activity recorded yet — waiting for the first engine probe.</div>
+        )}
         {filteredLogs.map((log) => (
           <div key={log.id} className="text-slate-400 flex items-start gap-2 hover:bg-slate-900/40 p-0.5 rounded">
             <span className="text-slate-600 shrink-0 select-none">[{log.timestamp}]</span>

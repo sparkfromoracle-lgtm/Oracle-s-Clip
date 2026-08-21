@@ -1,7 +1,1 @@
-{
-  "tests/test_phase3_failure_recovery.py::test_orchestrator_retry_on_transient_rendering_failure": true,
-  "tests/test_phase3_failure_recovery.py::test_orchestrator_fails_closed_when_retries_exhausted": true,
-  "tests/test_phase1_smoke_suite.py::test_phase1_production_smoke_test_e2e": true,
-  "tests/test_phase2_persistence_durable.py::test_durable_job_store_crud_and_restart": true,
-  "tests/test_phase4_load_performance.py::test_concurrent_load_and_rate_limiting": true
-}
+{}
