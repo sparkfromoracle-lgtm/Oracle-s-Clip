@@ -168,6 +168,19 @@ class DurableJobStore:
                 results.append(job)
         return results
 
+    def delete_job(self, job_id: str) -> bool:
+        """Deletes a job by ID. Returns True if deleted, False if not found."""
+        with self._lock, self._get_connection() as conn:
+            cursor = conn.execute("DELETE FROM render_jobs WHERE job_id = ?;", (job_id,))
+            return cursor.rowcount > 0
+
+    def __len__(self) -> int:
+        """Returns the total count of jobs in the store."""
+        with self._lock, self._get_connection() as conn:
+            cursor = conn.execute("SELECT COUNT(*) FROM render_jobs;")
+            count = cursor.fetchone()[0]
+        return count
+
     def __getitem__(self, job_id: str) -> RenderJob:
         job = self.get_job(job_id)
         if not job:
