@@ -29,11 +29,14 @@ class OrchestrationClipTask:
 
 
 @dataclass(frozen=True)
-class Base44IntegrationHints:
-    """Phase 13.7: Orchestration hints for frontend/Base44 integration.
-    
-    Base44 is the frontend/orchestration-facing layer.
-    Base44 must NOT execute heavy media processing.
+class IntegrationHints:
+    """Phase 13.7: Provider-agnostic orchestration hints for the frontend/integration layer.
+
+    Describes the contract surface any orchestration-facing layer (Base44 in dev,
+    or any other integration host) consumes. The hints carry no provider-specific
+    runtime dependency: they are static metadata about the pipeline's event
+    vocabulary and API prefix. Heavy media processing is never delegated to the
+    integration layer.
     """
     collection_name: str = "oracle_clips"
     endpoint_prefix: str = "/v1"

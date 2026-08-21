@@ -89,8 +89,8 @@ export const PipelineFlow: React.FC<PipelineFlowProps> = ({ onStepSelect }) => {
       icon: '🌐',
       status: 'completed',
       activeColor: 'bg-indigo-500 border-indigo-400 text-white shadow-indigo-500/20 shadow-md',
-      description: 'Dispatches signed Base44 webhook event with HMAC-SHA256 timestamp signature.',
-      contract: 'Base44Dispatcher.send_event(event="media.clip.published", hmac_signature)',
+      description: 'Dispatches signed webhook event with HMAC-SHA256 timestamp signature to the configured integration host.',
+      contract: 'WebhookDispatcher.send_event(event="media.clip.published", hmac_signature)',
     },
   ];
 

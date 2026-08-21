@@ -26,7 +26,7 @@ from media_service.quality.guardian_hooks import QualityChecker, PassThroughGuar
 from media_service.security.webhooks import WebhookDispatcher
 from media_service.security.media_guard import MediaGuard
 from media_service.storage.object_storage import ObjectStorageBackend
-from media_service.orchestration.contracts import OrchestrationClipTask, WebhookPayload, Base44IntegrationHints
+from media_service.orchestration.contracts import OrchestrationClipTask, WebhookPayload, IntegrationHints
 
 logger = logging.getLogger("oracle_clip.orchestrator")
 
@@ -55,10 +55,15 @@ class CanonicalPipelineOrchestrator:
         self.webhook_target_url = webhook_target_url
         self.media_guard = MediaGuard()
         self.max_retries = max_retries
-        self.hints = Base44IntegrationHints()
+        self.hints = IntegrationHints()
 
     def _dispatch_event(self, tenant_id: str, event_type: str, payload: Dict[str, Any]) -> None:
-        """Dispatches signed Base44 webhook event if dispatcher and target URL are configured."""
+        """Dispatches a signed webhook event if a dispatcher and target URL are configured.
+
+        Provider-agnostic: the webhook target is supplied at construction time and
+        may point to Base44 or any other integration host. No provider-specific
+        credential or model is required for this path.
+        """
         if not self.webhook_dispatcher or not self.webhook_target_url:
             return
 
@@ -73,7 +78,7 @@ class CanonicalPipelineOrchestrator:
                 payload=body.__dict__,
             )
         except Exception as e:
-            logger.warning(f"Failed to dispatch Base44 webhook '{event_type}' to {self.webhook_target_url}: {e}")
+            logger.warning(f"Failed to dispatch webhook '{event_type}' to {self.webhook_target_url}: {e}")
 
     def _render_with_retries(self, job: RenderJob, source_media_path: str, output_path: str) -> RenderedAsset:
         """Single implementation of the render step: bounded retries, fail-closed.

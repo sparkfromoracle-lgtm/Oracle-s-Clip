@@ -11,7 +11,7 @@ export const ContractViewer: React.FC<ContractViewerProps> = ({ initialFile = 'o
 
   const fileContents: Record<string, { title: string; language: string; content: string }> = {
     'orchestration_contracts.py': {
-      title: 'Canonical Architecture Contracts (Base44 Sealed Pipeline)',
+      title: 'Canonical Architecture Contracts (Sealed Pipeline)',
       language: 'python',
       content: `# orchestration_contracts.py - Immutable Orchestration Contracts
 from dataclasses import dataclass, field
@@ -120,7 +120,7 @@ S3_BUCKET_NAME=production-clips-v1
 
 # Multi-Tenant & Webhook Security
 ORACLE_API_KEY_SECRET=changeme_in_production_strict_key
-BASE44_WEBHOOK_SECRET=changeme_hmac_secret_sha256
+WEBHOOK_SECRET=changeme_hmac_secret_sha256
 WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS=300
 
 # Subprocess & Resource Limits
