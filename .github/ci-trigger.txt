@@ -1,0 +1,3 @@
+CI trigger file
+
+This file is a no-op commit to trigger GitHub Actions after the Vite TypeScript fix.
