@@ -1,11 +1,11 @@
 import React from 'react';
-import { ShieldCheck, RefreshCw, Terminal, Sliders, CheckCircle2, Play, Eye } from 'lucide-react';
+import { ShieldCheck, RefreshCw, Terminal, Sliders, CheckCircle2, Play, Eye, Activity, History, Wand2, Share2 } from 'lucide-react';
 
 interface HeaderProps {
   onOpenValidator: () => void;
   onTriggerAuditScan: () => void;
-  activeTab: 'dashboard' | 'logs' | 'contracts' | 'simulator';
-  setActiveTab: (tab: 'dashboard' | 'logs' | 'contracts' | 'simulator') => void;
+  activeTab: 'dashboard' | 'rendering' | 'history' | 'generate' | 'publishing' | 'contracts' | 'simulator';
+  setActiveTab: (tab: 'dashboard' | 'rendering' | 'history' | 'generate' | 'publishing' | 'contracts' | 'simulator') => void;
   isAuditing: boolean;
   systemStatus: 'ready' | 'degraded' | 'unreachable';
 }
@@ -64,6 +64,50 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <Sliders className="w-3.5 h-3.5" />
             <span>Telemetry</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('generate')}
+            className={`px-3 py-1 rounded transition-colors flex items-center gap-1.5 ${
+              activeTab === 'generate'
+                ? 'bg-indigo-600 text-white font-medium shadow-sm'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Wand2 className="w-3.5 h-3.5" />
+            <span>Generate</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('rendering')}
+            className={`px-3 py-1 rounded transition-colors flex items-center gap-1.5 ${
+              activeTab === 'rendering'
+                ? 'bg-indigo-600 text-white font-medium shadow-sm'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Activity className="w-3.5 h-3.5" />
+            <span>Rendering</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('history')}
+            className={`px-3 py-1 rounded transition-colors flex items-center gap-1.5 ${
+              activeTab === 'history'
+                ? 'bg-indigo-600 text-white font-medium shadow-sm'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <History className="w-3.5 h-3.5" />
+            <span>History</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('publishing')}
+            className={`px-3 py-1 rounded transition-colors flex items-center gap-1.5 ${
+              activeTab === 'publishing'
+                ? 'bg-indigo-600 text-white font-medium shadow-sm'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Share2 className="w-3.5 h-3.5" />
+            <span>Publishing</span>
           </button>
           <button
             onClick={() => setActiveTab('simulator')}

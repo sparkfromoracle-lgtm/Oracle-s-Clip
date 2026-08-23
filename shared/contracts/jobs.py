@@ -48,6 +48,9 @@ class RenderJob:
     created_at: Optional[str] = None
     completed_at: Optional[str] = None
     progress: float = 0.0
+    # Google Sheets export tracking — populated only after a successful export.
+    google_sheet_exported_at: Optional[str] = None
+    google_sheet_row_id: Optional[str] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 

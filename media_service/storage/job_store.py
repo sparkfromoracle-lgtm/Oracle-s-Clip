@@ -3,7 +3,8 @@ import json
 import sqlite3
 import threading
 import time
-from typing import Dict, List, Optional, Any, Iterator
+from datetime import datetime
+from typing import Dict, List, Optional, Any, Iterator, Tuple
 from shared.contracts.enums import JobStatus, ClipSpecStatus
 from shared.contracts.jobs import RenderJob, ClipSpecification, ClipSegmentSpec, MediaJobStateMachine
 from shared.errors.errors import OracleClipError, ValidationError, TenantIsolationError
@@ -40,11 +41,28 @@ class DurableJobStore:
                     output_path TEXT,
                     error_message TEXT,
                     created_at REAL NOT NULL,
-                    updated_at REAL NOT NULL
+                    updated_at REAL NOT NULL,
+                    completed_at REAL,
+                    google_sheet_exported_at TEXT,
+                    google_sheet_row_id TEXT
                 );
             """)
+            # Migration: add columns if upgrading from an older schema.
+            self._migrate_columns(conn)
             conn.execute("CREATE INDEX IF NOT EXISTS idx_tenant_id ON render_jobs(tenant_id);")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_status ON render_jobs(status);")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_tenant_status ON render_jobs(tenant_id, status);")
+
+    @staticmethod
+    def _migrate_columns(conn: sqlite3.Connection) -> None:
+        existing = {row[1] for row in conn.execute("PRAGMA table_info(render_jobs);")}
+        for col, col_type in [
+            ("completed_at", "REAL"),
+            ("google_sheet_exported_at", "TEXT"),
+            ("google_sheet_row_id", "TEXT"),
+        ]:
+            if col not in existing:
+                conn.execute(f"ALTER TABLE render_jobs ADD COLUMN {col} {col_type};")
 
     def save_job(self, job: RenderJob) -> None:
         """Atomically saves or updates a RenderJob."""
@@ -62,17 +80,33 @@ class DurableJobStore:
         spec_json = json.dumps(spec_dict)
         status_val = job.status.value if hasattr(job.status, "value") else str(job.status)
 
+        # Preserve original created_at on updates; set completed_at when terminal.
+        created_at = now
+        completed_at = None
         with self._lock, self._get_connection() as conn:
+            existing = conn.execute(
+                "SELECT created_at FROM render_jobs WHERE job_id = ?;", (job.job_id,)
+            ).fetchone()
+            if existing:
+                created_at = existing[0]
+            if status_val in (JobStatus.COMPLETED.value, JobStatus.FAILED.value, JobStatus.CANCELLED.value):
+                completed_at = now
+
             conn.execute("""
                 INSERT INTO render_jobs (
-                    job_id, tenant_id, spec_id, source_media_id, status, spec_json, output_path, error_message, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    job_id, tenant_id, spec_id, source_media_id, status, spec_json,
+                    output_path, error_message, created_at, updated_at, completed_at,
+                    google_sheet_exported_at, google_sheet_row_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(job_id) DO UPDATE SET
                     status=excluded.status,
                     spec_json=excluded.spec_json,
                     output_path=excluded.output_path,
                     error_message=excluded.error_message,
-                    updated_at=excluded.updated_at;
+                    updated_at=excluded.updated_at,
+                    completed_at=COALESCE(render_jobs.completed_at, excluded.completed_at),
+                    google_sheet_exported_at=excluded.google_sheet_exported_at,
+                    google_sheet_row_id=excluded.google_sheet_row_id;
             """, (
                 job.job_id,
                 job.tenant_id,
@@ -82,15 +116,19 @@ class DurableJobStore:
                 spec_json,
                 job.output_path,
                 job.error_message,
+                created_at,
                 now,
-                now,
+                completed_at,
+                job.google_sheet_exported_at,
+                job.google_sheet_row_id,
             ))
 
     def get_job(self, job_id: str) -> Optional[RenderJob]:
         """Retrieves a job by ID."""
         with self._lock, self._get_connection() as conn:
             cursor = conn.execute("""
-                SELECT job_id, tenant_id, spec_json, status, output_path, error_message
+                SELECT job_id, tenant_id, spec_json, status, output_path, error_message,
+                       created_at, completed_at, google_sheet_exported_at, google_sheet_row_id
                 FROM render_jobs WHERE job_id = ?;
             """, (job_id,))
             row = cursor.fetchone()
@@ -98,7 +136,8 @@ class DurableJobStore:
         if not row:
             return None
 
-        j_id, tenant_id, spec_json, status_str, output_path, error_message = row
+        (j_id, tenant_id, spec_json, status_str, output_path, error_message,
+         created_at_ts, completed_at_ts, gs_exported_at, gs_row_id) = row
         s_data = json.loads(spec_json)
         segments = [
             ClipSegmentSpec(
@@ -126,6 +165,10 @@ class DurableJobStore:
             status=JobStatus(status_str),
             output_path=output_path,
             error_message=error_message,
+            created_at=datetime.fromtimestamp(created_at_ts).isoformat() + "Z" if created_at_ts else None,
+            completed_at=datetime.fromtimestamp(completed_at_ts).isoformat() + "Z" if completed_at_ts else None,
+            google_sheet_exported_at=gs_exported_at,
+            google_sheet_row_id=gs_row_id,
         )
 
     def transition_job_status(self, job_id: str, new_status: JobStatus, output_path: Optional[str] = None, error_message: Optional[str] = None) -> RenderJob:
@@ -195,6 +238,85 @@ class DurableJobStore:
 
     def get(self, job_id: str, default: Optional[RenderJob] = None) -> Optional[RenderJob]:
         return self.get_job(job_id) or default
+
+    def list_active_jobs(self, tenant_id: str) -> List[RenderJob]:
+        """Returns jobs in PENDING or IN_PROGRESS state for a tenant."""
+        active_statuses = (JobStatus.PENDING.value, JobStatus.IN_PROGRESS.value)
+        placeholders = ",".join("?" * len(active_statuses))
+        with self._lock, self._get_connection() as conn:
+            cursor = conn.execute(
+                f"SELECT job_id FROM render_jobs WHERE tenant_id = ? AND status IN ({placeholders}) ORDER BY created_at ASC;",
+                (tenant_id, *active_statuses),
+            )
+            job_ids = [r[0] for r in cursor.fetchall()]
+        return [job for jid in job_ids if (job := self.get_job(jid)) is not None]
+
+    def list_history(
+        self,
+        tenant_id: str,
+        status: Optional[str] = None,
+        search: Optional[str] = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> Tuple[List[RenderJob], int]:
+        """Returns terminal-state jobs (completed/failed/cancelled) for a tenant.
+
+        Supports optional status filter, job-id search, pagination, and returns
+        the total matching count for the UI.
+        """
+        terminal_statuses = (
+            JobStatus.COMPLETED.value,
+            JobStatus.FAILED.value,
+            JobStatus.CANCELLED.value,
+        )
+        placeholders = ",".join("?" * len(terminal_statuses))
+        conditions = ["tenant_id = ?", f"status IN ({placeholders})"]
+        params: list = [tenant_id, *terminal_statuses]
+
+        if status and status in terminal_statuses:
+            conditions.append("status = ?")
+            params.append(status)
+
+        if search:
+            conditions.append("job_id LIKE ?")
+            params.append(f"%{search}%")
+
+        where = " AND ".join(conditions)
+        with self._lock, self._get_connection() as conn:
+            count_cursor = conn.execute(
+                f"SELECT COUNT(*) FROM render_jobs WHERE {where};", params
+            )
+            total = count_cursor.fetchone()[0]
+
+            cursor = conn.execute(
+                f"SELECT job_id FROM render_jobs WHERE {where} ORDER BY created_at DESC LIMIT ? OFFSET ?;",
+                (*params, limit, offset),
+            )
+            job_ids = [r[0] for r in cursor.fetchall()]
+
+        jobs = [job for jid in job_ids if (job := self.get_job(jid)) is not None]
+        return jobs, total
+
+    def count_by_status(self, tenant_id: str) -> Dict[str, int]:
+        """Returns a count of jobs per status for a tenant."""
+        with self._lock, self._get_connection() as conn:
+            cursor = conn.execute(
+                "SELECT status, COUNT(*) FROM render_jobs WHERE tenant_id = ? GROUP BY status;",
+                (tenant_id,),
+            )
+            return {row[0]: row[1] for row in cursor.fetchall()}
+
+    def update_export_tracking(
+        self, job_id: str, exported_at: str, row_id: str
+    ) -> None:
+        """Records Google Sheets export metadata on a job."""
+        with self._lock, self._get_connection() as conn:
+            conn.execute(
+                """UPDATE render_jobs
+                   SET google_sheet_exported_at = ?, google_sheet_row_id = ?, updated_at = ?
+                   WHERE job_id = ?;""",
+                (exported_at, row_id, time.time(), job_id),
+            )
 
     def clear(self) -> None:
         """Clears all job records."""

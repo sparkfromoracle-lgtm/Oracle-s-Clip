@@ -45,6 +45,27 @@ class Settings(BaseModel):
     # CORS
     cors_allowed_origins: List[str] = Field(default_factory=lambda: ["*"])
 
+    # Google Sheets Integration (optional export)
+    google_client_id: str = Field(default="")
+    google_client_secret: str = Field(default="")
+    google_redirect_uri: str = Field(default="")
+    google_sheets_spreadsheet_id: str = Field(default="")
+
+    # Social Publishing Platform OAuth Credentials (all optional, empty = not configured)
+    youtube_client_id: str = Field(default="")
+    youtube_client_secret: str = Field(default="")
+    tiktok_client_id: str = Field(default="")
+    tiktok_client_secret: str = Field(default="")
+    instagram_client_id: str = Field(default="")
+    instagram_client_secret: str = Field(default="")
+    facebook_client_id: str = Field(default="")
+    facebook_client_secret: str = Field(default="")
+    x_client_id: str = Field(default="")
+    x_client_secret: str = Field(default="")
+    linkedin_client_id: str = Field(default="")
+    linkedin_client_secret: str = Field(default="")
+    social_oauth_redirect_uri: str = Field(default="")
+
     @property
     def is_production(self) -> bool:
         return self.environment.lower() in {"production", "prod"}
@@ -171,6 +192,23 @@ def load_settings_from_env() -> Settings:
         idempotency_ttl_seconds=int(os.environ.get("IDEMPOTENCY_TTL_SECONDS", 86400)),
         max_render_retries=int(os.environ.get("MAX_RENDER_RETRIES", 2)),
         cors_allowed_origins=cors_origins or ["*"],
+        google_client_id=os.environ.get("GOOGLE_CLIENT_ID", ""),
+        google_client_secret=os.environ.get("GOOGLE_CLIENT_SECRET", ""),
+        google_redirect_uri=os.environ.get("GOOGLE_REDIRECT_URI", ""),
+        google_sheets_spreadsheet_id=os.environ.get("GOOGLE_SHEETS_SPREADSHEET_ID", ""),
+        youtube_client_id=os.environ.get("YOUTUBE_CLIENT_ID", ""),
+        youtube_client_secret=os.environ.get("YOUTUBE_CLIENT_SECRET", ""),
+        tiktok_client_id=os.environ.get("TIKTOK_CLIENT_ID", ""),
+        tiktok_client_secret=os.environ.get("TIKTOK_CLIENT_SECRET", ""),
+        instagram_client_id=os.environ.get("INSTAGRAM_CLIENT_ID", ""),
+        instagram_client_secret=os.environ.get("INSTAGRAM_CLIENT_SECRET", ""),
+        facebook_client_id=os.environ.get("FACEBOOK_CLIENT_ID", ""),
+        facebook_client_secret=os.environ.get("FACEBOOK_CLIENT_SECRET", ""),
+        x_client_id=os.environ.get("X_CLIENT_ID", ""),
+        x_client_secret=os.environ.get("X_CLIENT_SECRET", ""),
+        linkedin_client_id=os.environ.get("LINKEDIN_CLIENT_ID", ""),
+        linkedin_client_secret=os.environ.get("LINKEDIN_CLIENT_SECRET", ""),
+        social_oauth_redirect_uri=os.environ.get("SOCIAL_OAUTH_REDIRECT_URI", ""),
     )
 
     return settings
