@@ -18,3 +18,7 @@ TEST_API_KEYS = "dev-admin-key-12345:tenant-alpha,dev-admin-key-load:load_tenant
 os.environ["API_KEYS"] = TEST_API_KEYS
 os.environ.setdefault("WEBHOOK_SECRET", "test_webhook_secret_1234567890")
 os.environ.setdefault("ENVIRONMENT", "development")
+# Use mock renderer in tests so unit tests don't require real FFmpeg processing.
+# Tests that need real FFmpeg (e.g. test_real_media_pipeline) create their own
+# FFmpegRendererAdapter instances directly and are unaffected by this setting.
+os.environ.setdefault("RENDERER_MODE", "mock")

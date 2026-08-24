@@ -44,7 +44,12 @@ class DurableJobStore:
                     updated_at REAL NOT NULL,
                     completed_at REAL,
                     google_sheet_exported_at TEXT,
-                    google_sheet_row_id TEXT
+                    google_sheet_row_id TEXT,
+                    rights_status TEXT DEFAULT 'rights_unknown',
+                    rights_owner TEXT,
+                    rights_source TEXT,
+                    rights_license TEXT,
+                    rights_notes TEXT
                 );
             """)
             # Migration: add columns if upgrading from an older schema.
@@ -60,6 +65,11 @@ class DurableJobStore:
             ("completed_at", "REAL"),
             ("google_sheet_exported_at", "TEXT"),
             ("google_sheet_row_id", "TEXT"),
+            ("rights_status", "TEXT"),
+            ("rights_owner", "TEXT"),
+            ("rights_source", "TEXT"),
+            ("rights_license", "TEXT"),
+            ("rights_notes", "TEXT"),
         ]:
             if col not in existing:
                 conn.execute(f"ALTER TABLE render_jobs ADD COLUMN {col} {col_type};")
@@ -96,8 +106,9 @@ class DurableJobStore:
                 INSERT INTO render_jobs (
                     job_id, tenant_id, spec_id, source_media_id, status, spec_json,
                     output_path, error_message, created_at, updated_at, completed_at,
-                    google_sheet_exported_at, google_sheet_row_id
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    google_sheet_exported_at, google_sheet_row_id,
+                    rights_status, rights_owner, rights_source, rights_license, rights_notes
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(job_id) DO UPDATE SET
                     status=excluded.status,
                     spec_json=excluded.spec_json,
@@ -106,7 +117,12 @@ class DurableJobStore:
                     updated_at=excluded.updated_at,
                     completed_at=COALESCE(render_jobs.completed_at, excluded.completed_at),
                     google_sheet_exported_at=excluded.google_sheet_exported_at,
-                    google_sheet_row_id=excluded.google_sheet_row_id;
+                    google_sheet_row_id=excluded.google_sheet_row_id,
+                    rights_status=excluded.rights_status,
+                    rights_owner=excluded.rights_owner,
+                    rights_source=excluded.rights_source,
+                    rights_license=excluded.rights_license,
+                    rights_notes=excluded.rights_notes;
             """, (
                 job.job_id,
                 job.tenant_id,
@@ -121,6 +137,11 @@ class DurableJobStore:
                 completed_at,
                 job.google_sheet_exported_at,
                 job.google_sheet_row_id,
+                getattr(job, 'rights_status', 'rights_unknown'),
+                getattr(job, 'rights_owner', None),
+                getattr(job, 'rights_source', None),
+                getattr(job, 'rights_license', None),
+                getattr(job, 'rights_notes', None),
             ))
 
     def get_job(self, job_id: str) -> Optional[RenderJob]:
@@ -128,7 +149,8 @@ class DurableJobStore:
         with self._lock, self._get_connection() as conn:
             cursor = conn.execute("""
                 SELECT job_id, tenant_id, spec_json, status, output_path, error_message,
-                       created_at, completed_at, google_sheet_exported_at, google_sheet_row_id
+                       created_at, completed_at, google_sheet_exported_at, google_sheet_row_id,
+                       rights_status, rights_owner, rights_source, rights_license, rights_notes
                 FROM render_jobs WHERE job_id = ?;
             """, (job_id,))
             row = cursor.fetchone()
@@ -137,7 +159,8 @@ class DurableJobStore:
             return None
 
         (j_id, tenant_id, spec_json, status_str, output_path, error_message,
-         created_at_ts, completed_at_ts, gs_exported_at, gs_row_id) = row
+         created_at_ts, completed_at_ts, gs_exported_at, gs_row_id,
+         rights_status, rights_owner, rights_source, rights_license, rights_notes) = row
         s_data = json.loads(spec_json)
         segments = [
             ClipSegmentSpec(
@@ -169,6 +192,11 @@ class DurableJobStore:
             completed_at=datetime.fromtimestamp(completed_at_ts).isoformat() + "Z" if completed_at_ts else None,
             google_sheet_exported_at=gs_exported_at,
             google_sheet_row_id=gs_row_id,
+            rights_status=rights_status or "rights_unknown",
+            rights_owner=rights_owner,
+            rights_source=rights_source,
+            rights_license=rights_license,
+            rights_notes=rights_notes,
         )
 
     def transition_job_status(self, job_id: str, new_status: JobStatus, output_path: Optional[str] = None, error_message: Optional[str] = None) -> RenderJob:

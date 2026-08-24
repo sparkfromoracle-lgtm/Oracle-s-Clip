@@ -52,7 +52,9 @@ from media_service.integrations.google_sheets import GoogleSheetsExportService
 from media_service.publishing.adapters import get_platform_adapters
 from media_service.publishing.publishing_store import PublishingStore
 from media_service.publishing.publishing_service import PublishingService
+from media_service.scheduling.scheduler import PublishingScheduler
 import time
+import shutil as shutil_module
 
 logger = logging.getLogger("oracle_clip.api")
 
@@ -69,8 +71,14 @@ idempotency_store = IdempotencyStore(default_ttl_seconds=settings.idempotency_tt
 media_guard = MediaGuard(max_file_size_bytes=settings.max_upload_size_bytes)
 readiness_probe = ReadinessProbe(settings)
 
-# Select renderer
-if settings.is_production:
+# Select renderer: use real FFmpeg when the binary is available (even in dev),
+# falling back to MockRendererAdapter only when FFmpeg is not installed or
+# RENDERER_MODE=mock is set explicitly (useful for unit tests).
+import shutil as _shutil
+_renderer_mode = os.getenv("RENDERER_MODE", "").lower()
+if _renderer_mode == "mock":
+    renderer = MockRendererAdapter()
+elif _shutil.which(settings.ffmpeg_binary) and _shutil.which(settings.ffprobe_binary):
     renderer = FFmpegRendererAdapter(
         ffmpeg_binary=settings.ffmpeg_binary,
         timeout_seconds=settings.rendering_timeout_seconds,
@@ -109,6 +117,9 @@ _publishing_store = PublishingStore(
 )
 _platform_adapters = get_platform_adapters(settings)
 publishing_service = PublishingService(store=_publishing_store, adapters=_platform_adapters)
+
+# Non-spam publishing scheduler (autopilot OFF by default)
+publishing_scheduler = PublishingScheduler(autopilot_enabled=False)
 
 app = FastAPI(
     title="Oracle Clip Production Hub API",
@@ -1187,3 +1198,243 @@ def get_social_post(
     if not post:
         raise ResourceNotFoundError(f"Social post '{post_id}' not found.")
     return {"post": post.__dict__}
+
+
+# ---------------------------------------------------------------------------
+# Media Upload Endpoint
+# ---------------------------------------------------------------------------
+
+@app.post("/v1/media/upload", tags=["media"])
+async def upload_media(
+    request: Request,
+    tenant: AuthenticatedTenant = Depends(get_current_tenant),
+):
+    """Uploads a source video file for processing. Validates the file and stores
+    it in the tenant-scoped storage directory.
+
+    Returns the server-side path to use as ``source_media_path`` in render jobs.
+    """
+    content_type = request.headers.get("content-type", "")
+    if not content_type.startswith("multipart/form-data"):
+        raise ValidationError("Expected multipart/form-data upload.")
+
+    from starlette.formparsers import MultiPartParser
+    form = await request.form()
+    upload_file = form.get("file")
+    if upload_file is None:
+        raise ValidationError("No 'file' field in upload.")
+
+    # Read the file bytes
+    file_bytes = await upload_file.read()
+    if not file_bytes:
+        raise ValidationError("Uploaded file is empty.")
+
+    # Validate the media bytes (magic bytes, size)
+    media_guard.validate_bytes(file_bytes, filename=upload_file.filename)
+
+    # Store in tenant-scoped directory
+    upload_dir = os.path.join(settings.local_storage_base_dir, "tenants", tenant.tenant_id, "uploads")
+    os.makedirs(upload_dir, exist_ok=True)
+
+    # Generate a unique filename
+    original_name = upload_file.filename or "upload.mp4"
+    safe_name = os.path.basename(original_name)
+    timestamp = int(time.time())
+    stored_name = f"{timestamp}_{safe_name}"
+    stored_path = os.path.join(upload_dir, stored_name)
+
+    with open(stored_path, "wb") as f:
+        f.write(file_bytes)
+
+    # Probe the media for duration if ffprobe is available
+    duration_ms = 0
+    try:
+        from media_service.inspect.media_inspector import MediaInspector
+        inspector = MediaInspector(ffprobe_binary=settings.ffprobe_binary)
+        probed = inspector.inspect(stored_path)
+        duration_ms = probed.duration_ms or 0
+    except Exception:
+        pass
+
+    return {
+        "source_media_path": stored_path,
+        "filename": stored_name,
+        "file_size_bytes": len(file_bytes),
+        "duration_ms": duration_ms,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Rendered Asset Download Endpoint
+# ---------------------------------------------------------------------------
+
+@app.get("/v1/render-jobs/{job_id}/download", tags=["rendering"])
+def download_rendered_asset(
+    job_id: str,
+    tenant: AuthenticatedTenant = Depends(get_current_tenant),
+):
+    """Serves the rendered output file for download. Enforces tenant isolation."""
+    job = job_store.get_job(job_id)
+    if not job:
+        raise ResourceNotFoundError(f"RenderJob with id '{job_id}' not found")
+
+    authenticator.authorize_tenant_access(tenant, job.tenant_id)
+
+    if job.status != JobStatus.COMPLETED:
+        raise ValidationError(f"Job '{job_id}' is not completed (status: {job.status.value}).")
+
+    if not job.output_path or not os.path.exists(job.output_path):
+        raise ResourceNotFoundError(f"Rendered output file not found for job '{job_id}'.")
+
+    from fastapi.responses import FileResponse
+    filename = os.path.basename(job.output_path)
+    return FileResponse(
+        path=job.output_path,
+        media_type="video/mp4",
+        filename=filename,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Rights / Provenance Endpoints
+# ---------------------------------------------------------------------------
+
+class UpdateRightsRequest(BaseModel):
+    job_id: str
+    rights_status: str
+    rights_owner: Optional[str] = None
+    rights_source: Optional[str] = None
+    rights_license: Optional[str] = None
+    rights_notes: Optional[str] = None
+
+
+@app.post("/v1/rights/update", tags=["rights"])
+def update_job_rights(
+    req: UpdateRightsRequest,
+    tenant: AuthenticatedTenant = Depends(get_current_tenant),
+):
+    """Updates the rights/provenance status of a render job.
+
+    Unknown rights must never silently become publishable — the publishing
+    compliance gate checks this status before allowing publication.
+    """
+    job = job_store.get_job(req.job_id)
+    if not job:
+        raise ResourceNotFoundError(f"RenderJob with id '{req.job_id}' not found")
+
+    authenticator.authorize_tenant_access(tenant, job.tenant_id)
+
+    from shared.contracts.enums import RightsStatus
+    valid_statuses = {rs.value for rs in RightsStatus}
+    if req.rights_status not in valid_statuses:
+        raise ValidationError(f"Invalid rights_status. Must be one of: {valid_statuses}")
+
+    # Update the job with rights information
+    updated_job = RenderJob(
+        job_id=job.job_id,
+        tenant_id=job.tenant_id,
+        spec=job.spec,
+        status=job.status,
+        output_path=job.output_path,
+        error_message=job.error_message,
+        created_at=job.created_at,
+        completed_at=job.completed_at,
+        progress=job.progress,
+        google_sheet_exported_at=job.google_sheet_exported_at,
+        google_sheet_row_id=job.google_sheet_row_id,
+        rights_status=req.rights_status,
+        rights_owner=req.rights_owner,
+        rights_source=req.rights_source,
+        rights_license=req.rights_license,
+        rights_notes=req.rights_notes,
+        metadata=job.metadata,
+    )
+    job_store.save_job(updated_job)
+    return {"job_id": req.job_id, "rights_status": req.rights_status}
+
+
+@app.get("/v1/rights/{job_id}", tags=["rights"])
+def get_job_rights(
+    job_id: str,
+    tenant: AuthenticatedTenant = Depends(get_current_tenant),
+):
+    """Returns the rights/provenance status for a render job."""
+    job = job_store.get_job(job_id)
+    if not job:
+        raise ResourceNotFoundError(f"RenderJob with id '{job_id}' not found")
+
+    authenticator.authorize_tenant_access(tenant, job.tenant_id)
+    return {
+        "job_id": job_id,
+        "rights_status": job.rights_status,
+        "rights_owner": job.rights_owner,
+        "rights_source": job.rights_source,
+        "rights_license": job.rights_license,
+        "rights_notes": job.rights_notes,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Scheduler Endpoints
+# ---------------------------------------------------------------------------
+
+class ScheduleEvaluateRequest(BaseModel):
+    quality_verdict: str = "pass"
+    quality_score: float = 0.0
+    opportunity_score: float = 0.0
+    rights_status: str = "rights_unknown"
+    guardian_approved: bool = False
+    platform: Optional[str] = None
+    posts_today: int = 0
+    max_posts_per_day: int = 3
+
+
+@app.post("/v1/scheduler/evaluate", tags=["scheduler"])
+def evaluate_schedule(
+    req: ScheduleEvaluateRequest,
+    tenant: AuthenticatedTenant = Depends(get_current_tenant),
+):
+    """Evaluates whether a candidate clip should be published now, later, or not at all.
+
+    The scheduler can decide 'Nothing worth publishing right now' — it never
+    creates filler content to satisfy a posting quota. Autopilot is OFF by default.
+    """
+    result = publishing_scheduler.evaluate(
+        quality_verdict=req.quality_verdict,
+        quality_score=req.quality_score,
+        opportunity_score=req.opportunity_score,
+        rights_status=req.rights_status,
+        guardian_approved=req.guardian_approved,
+        platform=req.platform,
+        posts_today=req.posts_today,
+        max_posts_per_day=req.max_posts_per_day,
+    )
+    return result
+
+
+class SetAutopilotRequest(BaseModel):
+    enabled: bool
+
+
+@app.post("/v1/scheduler/autopilot", tags=["scheduler"])
+def set_autopilot(
+    req: SetAutopilotRequest,
+    tenant: AuthenticatedTenant = Depends(get_current_tenant),
+):
+    """Toggles autopilot mode. OFF by default — manual review is always required
+    when autopilot is disabled."""
+    publishing_scheduler.autopilot_enabled = req.enabled
+    return {"autopilot_enabled": req.enabled}
+
+
+@app.get("/v1/scheduler/status", tags=["scheduler"])
+def get_scheduler_status(
+    tenant: AuthenticatedTenant = Depends(get_current_tenant),
+):
+    """Returns the current scheduler configuration."""
+    return {
+        "autopilot_enabled": publishing_scheduler.autopilot_enabled,
+        "min_quality_score": 0.75,
+        "min_opportunity_score": 0.70,
+        "min_platform_interval_hours": 4,
+    }

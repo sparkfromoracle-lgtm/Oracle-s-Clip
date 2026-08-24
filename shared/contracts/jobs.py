@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List, Optional
-from shared.contracts.enums import JobStatus, QualityVerdict, ClipSpecStatus
+from shared.contracts.enums import JobStatus, QualityVerdict, ClipSpecStatus, RightsStatus
 
 
 @dataclass(frozen=True)
@@ -51,6 +51,12 @@ class RenderJob:
     # Google Sheets export tracking — populated only after a successful export.
     google_sheet_exported_at: Optional[str] = None
     google_sheet_row_id: Optional[str] = None
+    # Rights / provenance tracking — unknown rights must never silently become publishable.
+    rights_status: str = RightsStatus.RIGHTS_UNKNOWN.value
+    rights_owner: Optional[str] = None
+    rights_source: Optional[str] = None
+    rights_license: Optional[str] = None
+    rights_notes: Optional[str] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 

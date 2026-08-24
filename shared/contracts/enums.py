@@ -50,3 +50,32 @@ class StorageBackendType(str, Enum):
     LOCAL = "local"
     S3 = "s3"
     MOCK = "mock"
+
+
+class RightsStatus(str, Enum):
+    """Provenance and rights status for a publishable asset.
+
+    Unknown rights must NEVER silently become publishable.
+    """
+    RIGHTS_VERIFIED = "rights_verified"
+    RIGHTS_UNKNOWN = "rights_unknown"
+    RESTRICTED = "restricted"
+    EXPIRED = "expired"
+    NOT_MONETIZABLE = "not_monetizable"
+
+
+class ScheduleDecision(str, Enum):
+    """Possible scheduler decisions for a candidate clip."""
+    PUBLISH = "publish"
+    SCHEDULE = "schedule"
+    REVIEW = "review"
+    WAIT = "wait"
+    REJECT = "reject"
+
+
+class MetricSource(str, Enum):
+    """Labels the origin of an analytics or revenue metric."""
+    ACTUAL = "actual"
+    ESTIMATED = "estimated"
+    IMPORTED = "imported"
+    USER_ENTERED = "user_entered"

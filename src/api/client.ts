@@ -351,6 +351,50 @@ export const api = {
 
   getSocialPost: (postId: string) =>
     request<{ post: SocialPostResponse }>(`/v1/publishing/posts/${postId}`),
+
+  // Media upload
+  uploadMedia: (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return request<{ source_media_path: string; filename: string; file_size_bytes: number; duration_ms: number }>(
+      '/v1/media/upload',
+      { method: 'POST', body: formData },
+    );
+  },
+
+  // Rendered asset download
+  getDownloadUrl: (jobId: string) =>
+    `${BASE_URL}/v1/render-jobs/${jobId}/download`,
+
+  // Rights / provenance
+  updateJobRights: (body: { job_id: string; rights_status: string; rights_owner?: string; rights_source?: string; rights_license?: string; rights_notes?: string }) =>
+    request<{ job_id: string; rights_status: string }>('/v1/rights/update', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  getJobRights: (jobId: string) =>
+    request<{ job_id: string; rights_status: string; rights_owner: string | null; rights_source: string | null; rights_license: string | null; rights_notes: string | null }>(
+      `/v1/rights/${jobId}`,
+    ),
+
+  // Scheduler
+  evaluateSchedule: (body: unknown) =>
+    request<{ decision: string; reasons: string[]; autopilot_enabled: boolean }>('/v1/scheduler/evaluate', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  setAutopilot: (enabled: boolean) =>
+    request<{ autopilot_enabled: boolean }>('/v1/scheduler/autopilot', {
+      method: 'POST',
+      body: JSON.stringify({ enabled }),
+    }),
+
+  getSchedulerStatus: () =>
+    request<{ autopilot_enabled: boolean; min_quality_score: number; min_opportunity_score: number; min_platform_interval_hours: number }>(
+      '/v1/scheduler/status',
+    ),
 };
 
 export const apiConfigured = Boolean(API_KEY);
