@@ -395,7 +395,123 @@ export const api = {
     request<{ autopilot_enabled: boolean; min_quality_score: number; min_opportunity_score: number; min_platform_interval_hours: number }>(
       '/v1/scheduler/status',
     ),
+
+  // -- Execution Engine (Engine Room) ---------------------------------------
+
+  engineState: () =>
+    request<EngineStateResponse>('/v1/engine/state'),
+
+  engineJobs: (limit = 100) =>
+    request<{ jobs: EngineJob[]; count: number }>(`/v1/engine/jobs?limit=${limit}`),
+
+  engineJob: (jobId: string) =>
+    request<{ job: EngineJob; events: EngineEvent[] }>(`/v1/engine/jobs/${jobId}`),
+
+  engineEvents: (limit = 200) =>
+    request<{ events: EngineEvent[]; count: number }>(`/v1/engine/events?limit=${limit}`),
+
+  createEngineJob: (body: {
+    source_media_path: string;
+    duration_ms: number;
+    target_aspect_ratio?: string;
+    publish?: boolean;
+    platform?: string;
+    account_id?: string;
+    rights_status?: string;
+  }) =>
+    request<{ job: EngineJob }>('/v1/engine/jobs', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  retryEngineJob: (jobId: string) =>
+    request<{ job: EngineJob }>(`/v1/engine/jobs/${jobId}/retry`, { method: 'POST' }),
+
+  cancelEngineJob: (jobId: string) =>
+    request<{ job: EngineJob }>(`/v1/engine/jobs/${jobId}/cancel`, { method: 'POST' }),
+
+  pauseEngine: () => request<{ paused: boolean }>('/v1/engine/pause', { method: 'POST' }),
+  resumeEngine: () => request<{ paused: boolean }>('/v1/engine/resume', { method: 'POST' }),
+
+  stopEngineWorker: (workerId: string) =>
+    request<{ worker_id: string; state: string }>(`/v1/engine/workers/${workerId}/stop`, { method: 'POST' }),
+  startEngineWorker: (workerId: string) =>
+    request<{ worker_id: string; state: string }>(`/v1/engine/workers/${workerId}/start`, { method: 'POST' }),
+
+  generateTestSource: (body: { duration_seconds?: number; target_aspect_ratio?: string }) =>
+    request<{ source_media_path: string; filename: string; duration_ms: number; file_size_bytes: number }>(
+      '/v1/engine/test-source',
+      { method: 'POST', body: JSON.stringify(body) },
+    ),
 };
+
+// -- Engine Room types ------------------------------------------------------
+
+export interface EngineWorker {
+  worker_id: string;
+  state: string; // offline | starting | idle | busy | error
+  current_job_id: string | null;
+  last_job_id: string | null;
+  jobs_completed: number;
+  jobs_failed: number;
+  started_at: number | null;
+  last_heartbeat: number | null;
+}
+
+export interface EngineJob {
+  job_id: string;
+  tenant_id: string;
+  state: string;
+  stage_index: number;
+  source_media_path: string;
+  duration_ms: number;
+  target_aspect_ratio: string;
+  publish: number | boolean;
+  platform: string | null;
+  account_id: string | null;
+  worker_id: string | null;
+  attempt: number;
+  progress: number;
+  progress_measurable: number | boolean;
+  output_path: string | null;
+  asset_id: string | null;
+  quality_verdict: string | null;
+  quality_score: number | null;
+  guardian_approved: number | null;
+  rights_status: string;
+  schedule_decision: string | null;
+  publish_status: string | null;
+  post_id: string | null;
+  post_url: string | null;
+  analytics_status: string | null;
+  error_message: string | null;
+  created_at: number;
+  updated_at: number;
+  completed_at: number | null;
+}
+
+export interface EngineEvent {
+  event_id: string;
+  event_type: string;
+  job_id: string | null;
+  timestamp: string;
+  source: string;
+  worker_id: string | null;
+  previous_state: string | null;
+  new_state: string | null;
+  metadata: Record<string, unknown> | null;
+  error: string | null;
+}
+
+export interface EngineStateResponse {
+  system_state: string;
+  paused: boolean;
+  worker_count: number;
+  workers: EngineWorker[];
+  active_job_count: number;
+  active_jobs: EngineJob[];
+  counts: Record<string, number>;
+}
 
 export const apiConfigured = Boolean(API_KEY);
 export const apiBaseUrl = BASE_URL || window.location.origin;

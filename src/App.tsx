@@ -12,11 +12,12 @@ import { ActiveJobsPanel } from './components/ActiveJobsPanel';
 import { JobHistory } from './components/JobHistory';
 import { BatchProcessor } from './components/BatchProcessor';
 import { PublishingDashboard } from './components/PublishingDashboard';
+import { EngineRoom } from './components/engine/EngineRoom';
 import { useEngineStatus } from './hooks/useEngineStatus';
 import { useRenderJobs } from './hooks/useRenderJobs';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'rendering' | 'history' | 'generate' | 'publishing' | 'contracts' | 'simulator'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'rendering' | 'history' | 'generate' | 'publishing' | 'contracts' | 'simulator' | 'engine'>('engine');
   const [selectedFile, setSelectedFile] = useState<string>('orchestration_contracts.py');
 
   // Single source of truth: live state polled from the media service.
@@ -94,6 +95,10 @@ export default function App() {
             <div className="p-6 h-full flex flex-col overflow-hidden">
               <InteractiveValidator onActivity={engine.appendLog} />
             </div>
+          )}
+
+          {activeTab === 'engine' && (
+            <EngineRoom />
           )}
 
           {activeTab === 'rendering' && (

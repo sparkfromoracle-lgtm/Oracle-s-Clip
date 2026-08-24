@@ -121,6 +121,28 @@ publishing_service = PublishingService(store=_publishing_store, adapters=_platfo
 # Non-spam publishing scheduler (autopilot OFF by default)
 publishing_scheduler = PublishingScheduler(autopilot_enabled=False)
 
+# Execution engine (Engine Room): real persisted, event-sourced worker pool.
+from media_service.engine.engine import Engine
+from media_service.engine.engine_store import EngineStore
+from media_service.api.engine_routes import build_engine_router
+
+engine_store = EngineStore(
+    db_path=os.getenv("ORACLE_CLIP_ENGINE_DB", "/tmp/oracle_clip_engine.db")
+)
+engine = Engine(
+    store=engine_store,
+    renderer=renderer,
+    spec_validator=spec_validator,
+    opportunity_generator=opp_generator,
+    quality_checker=quality_checker,
+    guardian_hook=guardian_hook,
+    publishing_service=publishing_service,
+    scheduler=publishing_scheduler,
+    ffprobe_binary=settings.ffprobe_binary,
+    worker_count=int(os.getenv("ENGINE_WORKER_COUNT", "2")),
+    render_timeout_seconds=settings.rendering_timeout_seconds,
+)
+
 app = FastAPI(
     title="Oracle Clip Production Hub API",
     version="1.0.0",
@@ -135,6 +157,19 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Engine Room router — backed by the real execution engine.
+app.include_router(build_engine_router(
+    engine=engine,
+    authenticator=authenticator,
+    local_storage_base_dir=settings.local_storage_base_dir,
+    ffprobe_binary=settings.ffprobe_binary,
+))
+
+
+@app.on_event("startup")
+def _start_engine():
+    engine.start()
 
 
 @app.middleware("http")

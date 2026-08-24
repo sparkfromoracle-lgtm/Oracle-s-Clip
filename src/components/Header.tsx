@@ -1,11 +1,11 @@
 import React from 'react';
-import { ShieldCheck, RefreshCw, Terminal, Sliders, CheckCircle2, Play, Eye, Activity, History, Wand2, Share2 } from 'lucide-react';
+import { ShieldCheck, RefreshCw, Terminal, Sliders, CheckCircle2, Play, Eye, Activity, History, Wand2, Share2, Cog } from 'lucide-react';
 
 interface HeaderProps {
   onOpenValidator: () => void;
   onTriggerAuditScan: () => void;
-  activeTab: 'dashboard' | 'rendering' | 'history' | 'generate' | 'publishing' | 'contracts' | 'simulator';
-  setActiveTab: (tab: 'dashboard' | 'rendering' | 'history' | 'generate' | 'publishing' | 'contracts' | 'simulator') => void;
+  activeTab: 'dashboard' | 'rendering' | 'history' | 'generate' | 'publishing' | 'contracts' | 'simulator' | 'engine';
+  setActiveTab: (tab: 'dashboard' | 'rendering' | 'history' | 'generate' | 'publishing' | 'contracts' | 'simulator' | 'engine') => void;
   isAuditing: boolean;
   systemStatus: 'ready' | 'degraded' | 'unreachable';
 }
@@ -64,6 +64,17 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <Sliders className="w-3.5 h-3.5" />
             <span>Telemetry</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('engine')}
+            className={`px-3 py-1 rounded transition-colors flex items-center gap-1.5 ${
+              activeTab === 'engine'
+                ? 'bg-indigo-600 text-white font-medium shadow-sm'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Cog className="w-3.5 h-3.5" />
+            <span>Engine Room</span>
           </button>
           <button
             onClick={() => setActiveTab('generate')}
