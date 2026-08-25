@@ -1,6 +1,4 @@
 {
-  "tests/test_engine.py::test_engine_happy_path_full_pipeline": true,
   "tests/test_engine.py::test_engine_failure_retry_and_recovery": true,
-  "tests/test_engine.py::test_engine_publish_blocked_without_account": true,
-  "tests/test_engine.py::test_engine_system_state_idle_when_no_jobs": true
+  "tests/test_debug_traceback.py::test_trace": true
 }

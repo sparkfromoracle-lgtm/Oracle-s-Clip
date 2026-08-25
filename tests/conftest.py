@@ -18,7 +18,11 @@ TEST_API_KEYS = "dev-admin-key-12345:tenant-alpha,dev-admin-key-load:load_tenant
 os.environ["API_KEYS"] = TEST_API_KEYS
 os.environ.setdefault("WEBHOOK_SECRET", "test_webhook_secret_1234567890")
 os.environ.setdefault("ENVIRONMENT", "development")
-# Use mock renderer in tests so unit tests don't require real FFmpeg processing.
+# Force mock renderer in tests so unit tests don't require real FFmpeg processing.
 # Tests that need real FFmpeg (e.g. test_real_media_pipeline) create their own
 # FFmpegRendererAdapter instances directly and are unaffected by this setting.
-os.environ.setdefault("RENDERER_MODE", "mock")
+os.environ["RENDERER_MODE"] = "mock"
+# Isolate the engine DB from any concurrently running uvicorn server process
+# (which uses FFmpegRendererAdapter and shares /tmp/oracle_clip_engine.db).
+# Without this, the server's workers claim test jobs and fail on missing sources.
+os.environ["ORACLE_CLIP_ENGINE_DB"] = "/tmp/test_oracle_clip_engine.db"
