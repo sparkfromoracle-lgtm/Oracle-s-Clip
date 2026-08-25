@@ -1,6 +1,6 @@
-import React from 'react';
-import { RotateCcw, X, AlertTriangle, CheckCircle2, ExternalLink } from 'lucide-react';
-import { EngineJob } from '../../api/client';
+import React, { useState } from 'react';
+import { RotateCcw, X, AlertTriangle, CheckCircle2, ExternalLink, Download, Lock, Unlock } from 'lucide-react';
+import { EngineJob, api, PublishGateResponse } from '../../api/client';
 import { stageStatuses, STAGE_STATUS_STYLES, StageStatus } from './stages';
 
 const STATE_BADGE: Record<string, string> = {
@@ -40,6 +40,36 @@ const JobCard: React.FC<{ job: EngineJob; onRetry: (id: string) => void; onCance
   const isTerminal = ['completed', 'failed', 'blocked', 'cancelled'].includes(job.state);
   const canRetry = job.state === 'failed' || job.state === 'blocked';
   const canCancel = !isTerminal;
+  const isCompleted = job.state === 'completed';
+  const isBlocked = job.state === 'blocked';
+  const [gate, setGate] = useState<PublishGateResponse | null>(null);
+  const [showGate, setShowGate] = useState(false);
+
+  const checkGate = async () => {
+    try {
+      const res = await api.evaluatePublishGate(job.job_id);
+      setGate(res.data);
+      setShowGate(true);
+    } catch { /* ignore */ }
+  };
+
+  // Derive publish readiness label from job state
+  const publishReadiness = (() => {
+    if (!isCompleted) return null;
+    if (!job.publish) return { label: 'READY TO EXPORT', tone: 'text-emerald-400' };
+    if (job.publish_status === 'published') return { label: 'PUBLISHED', tone: 'text-emerald-400' };
+    if (job.publish_status === 'not_connected') return { label: 'READY TO EXPORT · PLATFORM CONNECTION REQUIRED', tone: 'text-amber-400' };
+    if (job.publish_status === 'blocked') return { label: 'PUBLISH BLOCKED', tone: 'text-rose-400' };
+    return { label: 'READY TO PUBLISH', tone: 'text-emerald-400' };
+  })();
+
+  // Clear blocked reason
+  const blockedReason = (() => {
+    if (!isBlocked) return null;
+    if (job.publish_status === 'not_connected') return 'Platform connection required for publishing — no connected authorized account.';
+    if (job.publish_status === 'blocked') return 'Publishing blocked: rights not verified or compliance gate failed.';
+    return job.error_message || 'Job is blocked.';
+  })();
 
   return (
     <div className="rounded-lg border border-slate-800 bg-[#0f172a] p-3 flex flex-col gap-2.5">
@@ -116,6 +146,57 @@ const JobCard: React.FC<{ job: EngineJob; onRetry: (id: string) => void; onCance
           <span className="text-rose-400 flex items-center gap-1"><AlertTriangle className="w-3 h-3" /> {job.error_message}</span>
         )}
       </div>
+
+      {/* publish readiness + export */}
+      {publishReadiness && (
+        <div className="flex items-center gap-2 flex-wrap pt-1 border-t border-slate-800">
+          <span className={`text-[10px] font-mono font-bold flex items-center gap-1 ${publishReadiness.tone}`}>
+            {publishReadiness.tone === 'text-amber-400' ? <Lock className="w-3 h-3" /> : <Unlock className="w-3 h-3" />}
+            {publishReadiness.label}
+          </span>
+          <a
+            href={api.exportEngineJobUrl(job.job_id)}
+            download
+            className="flex items-center gap-1 text-[10px] font-mono font-bold text-indigo-300 hover:text-indigo-200 bg-indigo-500/10 border border-indigo-500/20 px-2 py-1 rounded transition-colors"
+          >
+            <Download className="w-3 h-3" /> EXPORT
+          </a>
+          {job.publish && job.publish_status !== 'published' && (
+            <button
+              onClick={() => void checkGate()}
+              className="text-[10px] font-mono text-slate-400 hover:text-slate-200 transition-colors"
+            >
+              {showGate ? 'hide gates' : 'check publish gates'}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* clear blocked reason */}
+      {blockedReason && (
+        <div className="flex items-start gap-1.5 pt-1 border-t border-slate-800">
+          <AlertTriangle className="w-3 h-3 text-amber-400 shrink-0 mt-0.5" />
+          <span className="text-[10px] font-mono text-amber-300">{blockedReason}</span>
+        </div>
+      )}
+
+      {/* publish gate details */}
+      {showGate && gate && (
+        <div className="flex flex-col gap-1 pt-1 border-t border-slate-800">
+          <span className={`text-[10px] font-mono font-bold ${gate.overall === 'ready_to_publish' ? 'text-emerald-400' : gate.overall === 'ready_to_export' ? 'text-amber-400' : 'text-rose-400'}`}>
+            {gate.overall.toUpperCase()}: {gate.overall_reason}
+          </span>
+          {(Object.entries(gate.gates) as [string, { status: string; reason?: string; reasons?: string[] }][]).map(([key, g]) => (
+            <div key={key} className="flex items-start gap-1.5 text-[9px] font-mono">
+              <span className="text-slate-600 shrink-0 uppercase">{key.replace(/_/g, ' ')}:</span>
+              <span className={g.status === 'publishable' || g.status === 'ready' || g.status === 'connected' || g.status === 'available' || g.status === 'monetizable' || g.status === 'not_required' ? 'text-emerald-400' : 'text-amber-400'}>
+                {g.status}
+              </span>
+              <span className="text-slate-600">{g.reason || (g.reasons && g.reasons.length > 0 ? g.reasons.join('; ') : '')}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 };

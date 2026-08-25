@@ -9,8 +9,8 @@ export const SystemStatusHeader: React.FC<{ engine: EngineRoomState }> = ({ engi
   const style = SYSTEM_STATE_STYLES[stateKey] ?? SYSTEM_STATE_STYLES.offline;
   const paused = sys?.paused ?? false;
 
-  const counts = sys?.counts ?? {};
-  const total = Object.values(counts).reduce((a, b) => a + b, 0);
+  const counts: Record<string, number> = sys?.counts ?? {};
+  const total = Object.values(counts).reduce((a: number, b: number) => a + b, 0);
 
   return (
     <div className="flex flex-col gap-3">

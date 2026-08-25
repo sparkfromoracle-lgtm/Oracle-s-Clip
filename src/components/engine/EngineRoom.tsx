@@ -5,6 +5,7 @@ import { WorkerGrid } from './WorkerGrid';
 import { JobBoard } from './JobBoard';
 import { EventStream } from './EventStream';
 import { JobCreator } from './JobCreator';
+import { ProductionReadiness } from './ProductionReadiness';
 
 /**
  * EngineRoom — the canonical machine visualization.
@@ -20,6 +21,7 @@ export const EngineRoom: React.FC = () => {
   return (
     <div className="p-6 flex flex-col gap-5 h-full overflow-y-auto">
       <SystemStatusHeader engine={engine} />
+      <ProductionReadiness />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         <div className="lg:col-span-1 flex flex-col gap-5">

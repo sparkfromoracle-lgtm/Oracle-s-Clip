@@ -443,6 +443,22 @@ export const api = {
       '/v1/engine/test-source',
       { method: 'POST', body: JSON.stringify(body) },
     ),
+
+  // Export (download the real rendered file)
+  exportEngineJobUrl: (jobId: string) =>
+    `${BASE_URL}/v1/engine/jobs/${jobId}/export`,
+
+  // Output validation (verify the real artifact)
+  validateEngineOutput: (jobId: string) =>
+    request<EngineOutputValidation>(`/v1/engine/jobs/${jobId}/output`),
+
+  // Publish gate (separate compliance decisions)
+  evaluatePublishGate: (jobId: string) =>
+    request<PublishGateResponse>(`/v1/engine/jobs/${jobId}/publish-gate`),
+
+  // Production readiness (real system information)
+  engineReadiness: () =>
+    request<EngineReadinessResponse>('/v1/engine/readiness'),
 };
 
 // -- Engine Room types ------------------------------------------------------
@@ -511,6 +527,42 @@ export interface EngineStateResponse {
   active_job_count: number;
   active_jobs: EngineJob[];
   counts: Record<string, number>;
+}
+
+// -- Engine output validation, publish gate, readiness ---------------------
+
+export interface EngineOutputValidation {
+  job_id: string;
+  output_path: string;
+  exists: boolean;
+  readable: boolean;
+  size_bytes: number;
+  duration_ms: number;
+  video_stream: { codec: string; width: number; height: number } | null;
+  audio_stream: { codec: string } | null;
+  codec: string | null;
+  resolution: string | null;
+  playable: boolean;
+  valid: boolean;
+  errors: string[];
+}
+
+export interface PublishGateResponse {
+  job_id: string;
+  overall: string;
+  overall_reason: string;
+  gates: {
+    publishability: { status: string; reasons: string[] };
+    ai_disclosure: { status: string; reason: string };
+    monetization: { status: string; reason: string };
+    account_risk: { status: string; reason: string };
+    api_status: { status: string; reason: string };
+  };
+}
+
+export interface EngineReadinessResponse {
+  overall: string;
+  checks: Record<string, { status: string; detail: string }>;
 }
 
 export const apiConfigured = Boolean(API_KEY);
